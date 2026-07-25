@@ -1,0 +1,1278 @@
+<title>elvideo-gemini — what this builds</title>
+
+<style>
+  :root {
+    --ground: #eceef1;
+    --surface: #f8f9fb;
+    --sunken: #e3e6ea;
+    --ink: #0f1319;
+    --body: #2c333e;
+    --muted: #667083;
+    --rule: #d3d8df;
+    --hairline: #c3cad3;
+
+    --det: #545d6c;
+    --det-soft: #dcdfe4;
+    --model: #2743c9;
+    --model-soft: #dde1f7;
+    --local: #55663c;
+    --local-soft: #e0e5d5;
+    --alert: #a4360f;
+    --alert-soft: #f4dfd7;
+    --on-fill: #f8f9fb;
+
+    --display: "Palatino Linotype", "Book Antiqua", Palatino, "Iowan Old Style", ui-serif, Georgia, serif;
+    --sans: "Segoe UI", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
+
+    --measure: 64ch;
+    --pad: clamp(1.1rem, 4vw, 3.5rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0c0f14;
+      --surface: #141920;
+      --sunken: #10151b;
+      --ink: #eef1f5;
+      --body: #c0c8d4;
+      --muted: #7d8798;
+      --rule: #242b35;
+      --hairline: #333c48;
+
+      --det: #8a95a6;
+      --det-soft: #232a34;
+      --model: #7f93ff;
+      --model-soft: #1b2040;
+      --local: #a1b46c;
+      --local-soft: #1e2418;
+      --alert: #e87c53;
+      --alert-soft: #33190f;
+    --on-fill: #0c0f14;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0c0f14;
+    --surface: #141920;
+    --sunken: #10151b;
+    --ink: #eef1f5;
+    --body: #c0c8d4;
+    --muted: #7d8798;
+    --rule: #242b35;
+    --hairline: #333c48;
+
+    --det: #8a95a6;
+    --det-soft: #232a34;
+    --model: #7f93ff;
+    --model-soft: #1b2040;
+    --local: #a1b46c;
+    --local-soft: #1e2418;
+    --alert: #e87c53;
+    --alert-soft: #33190f;
+    --on-fill: #0c0f14;
+  }
+
+  :root[data-theme="light"] {
+    --ground: #eceef1;
+    --surface: #f8f9fb;
+    --sunken: #e3e6ea;
+    --ink: #0f1319;
+    --body: #2c333e;
+    --muted: #667083;
+    --rule: #d3d8df;
+    --hairline: #c3cad3;
+
+    --det: #545d6c;
+    --det-soft: #dcdfe4;
+    --model: #2743c9;
+    --model-soft: #dde1f7;
+    --local: #55663c;
+    --local-soft: #e0e5d5;
+    --alert: #a4360f;
+    --alert-soft: #f4dfd7;
+    --on-fill: #f8f9fb;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--body);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 0 var(--pad) 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4.5rem;
+  }
+
+  .measure { max-width: var(--measure); }
+
+  p { margin: 0 0 1rem; }
+  p:last-child { margin-bottom: 0; }
+
+  strong { color: var(--ink); font-weight: 600; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+    color: var(--ink);
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    padding-top: clamp(2.5rem, 7vw, 5rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.1rem;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(2.4rem, 6.5vw, 4.1rem);
+    line-height: 1.02;
+    letter-spacing: -0.018em;
+    color: var(--ink);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h1 em {
+    font-style: italic;
+    color: var(--model);
+  }
+
+  .standfirst {
+    font-family: var(--display);
+    font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+    line-height: 1.5;
+    color: var(--body);
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+
+  .statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .statusbar > div {
+    flex: 1 1 9rem;
+    padding: 0.8rem 1rem;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .statusbar > div:last-child { border-right: 0; }
+
+  .statusbar dt {
+    font-family: var(--mono);
+    font-size: 0.63rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .statusbar dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+
+  /* ---------- sections ---------- */
+
+  .band {
+    display: flex;
+    flex-direction: column;
+    gap: 1.6rem;
+  }
+
+  .band > h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(1.55rem, 3.4vw, 2.1rem);
+    line-height: 1.15;
+    letter-spacing: -0.012em;
+    color: var(--ink);
+    margin: 0;
+    padding-bottom: 0.7rem;
+    border-bottom: 2px solid var(--ink);
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--sans);
+    font-weight: 650;
+    font-size: 0.78rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.55rem;
+  }
+
+  /* ---------- two paths ---------- */
+
+  .paths {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+  }
+
+  .path {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.15rem 1.25rem 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+
+  .path-b { border-top: 3px solid var(--model); }
+  .path-a { border-top: 3px solid var(--local); }
+
+  .path-tag {
+    font-family: var(--mono);
+    font-size: 0.67rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+  }
+  .path-b .path-tag { color: var(--model); }
+  .path-a .path-tag { color: var(--local); }
+
+  .path-name {
+    font-family: var(--display);
+    font-size: 1.3rem;
+    line-height: 1.2;
+    color: var(--ink);
+  }
+
+  .path ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.9rem;
+  }
+
+  .path li {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+  }
+
+  .path li span:first-child {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex: 0 0 5.7rem;
+  }
+
+  .shared {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    border-top: 1px dashed var(--hairline);
+    padding-top: 0.7rem;
+    margin-top: 0.2rem;
+  }
+
+  /* ---------- outcomes ---------- */
+
+  .outcomes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .outcome {
+    background: var(--surface);
+    padding: 1.2rem 1.25rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .outcome h4 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 1.18rem;
+    line-height: 1.25;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .outcome p { font-size: 0.9rem; margin: 0; }
+
+  .notgetting {
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--alert);
+    border-radius: 3px;
+    padding: 1rem 1.2rem;
+    font-size: 0.9rem;
+  }
+
+  .notgetting h3 { color: var(--alert); }
+
+  .notgetting ul {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  /* ---------- time budget bar ---------- */
+
+  .budget {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.3rem 1.35rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .budget-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .budget-total {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .budget-total b { color: var(--ink); font-size: 1.15rem; font-weight: 600; }
+
+  .bar {
+    display: flex;
+    height: 2.9rem;
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    background: var(--sunken);
+  }
+
+  .seg {
+    width: var(--w);
+    min-width: 4px;
+    position: relative;
+    border-right: 1px solid var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transform-origin: left center;
+  }
+
+  .seg:last-child { border-right: 0; }
+  .seg.det { background: var(--det); }
+  .seg.mod { background: var(--model); }
+  .seg.free { background: transparent; }
+
+  /* --on-fill flips with the theme, so one rule covers both fill colours. */
+  .seg-label {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.05em;
+    color: var(--on-fill);
+    white-space: nowrap;
+    padding: 0 0.35rem;
+  }
+
+  .seg.free .seg-label { color: var(--muted); }
+
+  .ticks {
+    display: flex;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    border-top: 1px solid var(--hairline);
+    padding-top: 0.3rem;
+    margin-top: -0.55rem;
+  }
+  .ticks span { flex: 1 1 20%; border-left: 1px solid var(--hairline); padding-left: 0.3rem; }
+  .ticks span:first-child { border-left: 0; padding-left: 0; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.3rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  .legend span { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch { width: 0.75rem; height: 0.75rem; border-radius: 2px; display: inline-block; }
+  .sw-det { background: var(--det); }
+  .sw-mod { background: var(--model); }
+  .sw-free { background: var(--sunken); border: 1px solid var(--hairline); }
+
+  .caption {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-style: italic;
+    max-width: 60ch;
+  }
+
+  /* ---------- stages ---------- */
+
+  .stages {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .stage {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 3.2rem 1fr;
+    gap: 0 1.1rem;
+    padding: 1.15rem 1.3rem 1.25rem;
+  }
+
+  .stage-n {
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--hairline);
+    font-variant-numeric: tabular-nums;
+    grid-row: 1 / span 3;
+    padding-top: 0.15rem;
+  }
+
+  .stage.is-model .stage-n { color: var(--model); }
+
+  .stage-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem 0.9rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .stage-title {
+    font-family: var(--display);
+    font-size: 1.25rem;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .stage-mod {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+  }
+
+  .stage-time {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.05rem 0.45rem;
+  }
+
+  .stage-body { font-size: 0.93rem; }
+  .stage-body p { margin-bottom: 0.55rem; }
+
+  .io {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.55rem;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    margin-top: 0.6rem;
+    color: var(--muted);
+  }
+  .io b {
+    color: var(--ink);
+    font-weight: 500;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.08rem 0.4rem;
+  }
+  .io .arrow { color: var(--hairline); }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 0.63rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    padding: 0.12rem 0.42rem;
+    border-radius: 2px;
+  }
+  .badge-det { color: var(--det); background: var(--det-soft); }
+  .badge-mod { color: var(--model); background: var(--model-soft); }
+
+  /* ---------- the rule ---------- */
+
+  .rulebox {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .figure {
+    background: var(--surface);
+    padding: 1.4rem 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .figure-n {
+    font-family: var(--mono);
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  .figure.hot .figure-n { color: var(--alert); }
+  .figure.good .figure-n { color: var(--model); }
+
+  .figure-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .figure-note { font-size: 0.82rem; color: var(--body); margin-top: 0.3rem; }
+
+  /* ---------- tables ---------- */
+
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 33rem;
+    background: var(--surface);
+    font-size: 0.88rem;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--sunken);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+
+  td.field { font-family: var(--mono); font-size: 0.8rem; color: var(--ink); white-space: nowrap; }
+
+  td.who { white-space: nowrap; font-family: var(--mono); font-size: 0.74rem; }
+  .who-det { color: var(--det); }
+  .who-mod { color: var(--model); font-weight: 600; }
+  .who-drv { color: var(--muted); }
+
+  /* ---------- code ---------- */
+
+  pre {
+    margin: 0;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.65;
+    color: var(--body);
+    tab-size: 2;
+  }
+  pre b { color: var(--model); font-weight: 500; }
+  pre i { color: var(--muted); font-style: normal; }
+  pre u { color: var(--det); text-decoration: none; }
+
+  /* ---------- queries ---------- */
+
+  .queries {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .query {
+    background: var(--surface);
+    padding: 0.95rem 1.25rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.3rem 1.5rem;
+    align-items: baseline;
+  }
+
+  .query .ask {
+    font-family: var(--display);
+    font-size: 1.02rem;
+    color: var(--ink);
+    font-style: italic;
+  }
+  .query .becomes {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--muted);
+  }
+  .query .becomes b { color: var(--model); font-weight: 500; }
+
+  @media (max-width: 34rem) {
+    .query { grid-template-columns: 1fr; }
+    .stage { grid-template-columns: 1fr; }
+    .stage-n { grid-row: auto; font-size: 1.05rem; }
+  }
+
+  /* ---------- checklist ---------- */
+
+  .tasks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .task {
+    background: var(--surface);
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    font-size: 0.86rem;
+  }
+  .task .tid {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    flex: 0 0 2.4rem;
+  }
+  .task.partial { background: var(--model-soft); }
+  .task.partial .tid { color: var(--model); }
+  .task.blocked .tid { color: var(--alert); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.3rem;
+    font-family: var(--mono);
+    font-size: 0.73rem;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+  }
+
+  a { color: var(--model); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--model);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .seg { animation: grow 0.75s cubic-bezier(0.16, 0.9, 0.3, 1) both; }
+    .seg:nth-child(1) { animation-delay: 0.05s; }
+    .seg:nth-child(2) { animation-delay: 0.13s; }
+    .seg:nth-child(3) { animation-delay: 0.21s; }
+    .seg:nth-child(4) { animation-delay: 0.29s; }
+    .seg:nth-child(5) { animation-delay: 0.37s; }
+    .seg:nth-child(6) { animation-delay: 0.45s; }
+    .seg:nth-child(7) { animation-delay: 0.53s; }
+  }
+
+  @keyframes grow {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">
+      <span>elvideo-gemini</span>
+      <span>Path B &middot; Gemini-native</span>
+      <span>Stage 1 of the pipeline</span>
+    </div>
+
+    <h1>One video in, one <em>text index</em> out.</h1>
+
+    <p class="standfirst">
+      A 10-minute clip becomes <code>footage_index.json</code> &mdash; every shot described,
+      scored, timed to the frame, and searchable as text. Runs on a laptop, on the free tier,
+      with one call to the model.
+    </p>
+
+    <dl class="statusbar">
+      <div><dt>Status</dt><dd>Scaffold</dd></div>
+      <div><dt>Tasks done</dt><dd>0 / 10</dd></div>
+      <div><dt>Open decisions</dt><dd>4</dd></div>
+      <div><dt>Next up</dt><dd>T010 &rarr; T001</dd></div>
+    </dl>
+  </header>
+
+  <!-- ============ WHAT ============ -->
+  <section class="band">
+    <h2>What we are actually building</h2>
+
+    <div class="measure">
+      <p>
+        Software cannot edit video it cannot read. So before any Director, Critic, or render step
+        can exist, the footage has to become <strong>language</strong> &mdash; a structured,
+        queryable description of what happens, when, and whether it is any good.
+      </p>
+      <p>
+        That is this project, and only this project. Ingest one clip, cut it into shots,
+        transcribe it word by word, judge each moment, score the image quality, and emit one
+        validated JSON file. Everything downstream is later.
+      </p>
+      <p>
+        But there is a second thing happening underneath, and it is the more important one.
+        This repo is <strong>one half of a controlled experiment</strong>.
+      </p>
+    </div>
+
+    <div class="paths">
+      <div class="path path-b">
+        <div class="path-tag">Path B &mdash; this repo</div>
+        <div class="path-name">Gemini-native</div>
+        <ul>
+          <li><span>Understanding</span> <span>One whole-video pass, audio + visual, cross-shot context</span></li>
+          <li><span>Cost</span> <span>~30K tokens per video, free tier</span></li>
+          <li><span>Bet</span> <span>Long-context beats frame-by-frame</span></li>
+        </ul>
+      </div>
+
+      <div class="path path-a">
+        <div class="path-tag">Path A &mdash; co-founder&rsquo;s repo</div>
+        <div class="path-name">Local VLM</div>
+        <ul>
+          <li><span>Understanding</span> <span>moondream2, one keyframe per shot, on-device</span></li>
+          <li><span>Cost</span> <span>Local compute, no API</span></li>
+          <li><span>Bet</span> <span>Nothing leaves the laptop</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="shared measure" style="border-top: 0; padding-top: 0;">
+      Shot cuts, transcription, and quality scoring are <strong>identical on both sides</strong>
+      &mdash; same library, same settings. Both emit the same schema. So the only variable left
+      is Understanding, and the diff between the two output files on the same footage
+      <em>is</em> the architecture decision.
+    </p>
+  </section>
+
+  <!-- ============ ACHIEVE ============ -->
+  <section class="band">
+    <h2>What exists when this is done</h2>
+
+    <div class="outcomes">
+      <div class="outcome">
+        <h4>A working command</h4>
+        <p>
+          <code>python -m elvideo index in.mp4</code> produces a schema-validated index in under
+          five minutes, on a laptop, on a free API key. No cloud account, no GPU cluster, no
+          upload form.
+        </p>
+      </div>
+      <div class="outcome">
+        <h4>An answer, with evidence</h4>
+        <p>
+          Two indexes of the same footage, one per path. Where they agree, the pipeline is sound.
+          Where Path B fills in <code>editorial_score</code> and <code>moment_reason</code> and
+          Path A cannot &mdash; that gap is the measurement.
+        </p>
+      </div>
+      <div class="outcome">
+        <h4>A locked contract</h4>
+        <p>
+          One JSON Schema both repos build against. Merging the two efforts becomes a
+          twenty-minute conversation instead of a refactor, because neither side ever diverged.
+        </p>
+      </div>
+      <div class="outcome">
+        <h4>A foundation, not a demo</h4>
+        <p>
+          The index is the substrate every later stage reads. Director picks shots from it, Critic
+          judges cuts against it, search queries it. Stage 1 done properly is what makes stages 2
+          through 5 tractable.
+        </p>
+      </div>
+    </div>
+
+    <div class="notgetting measure">
+      <h3>What you will not have</h3>
+      <ul>
+        <li>No rendered video. Nothing is cut, trimmed, or exported &mdash; this reads footage, it does not edit it.</li>
+        <li>No UI. One CLI command, one file at a time.</li>
+        <li>No Director, Critic, or Delivery agents.</li>
+        <li>No embeddings or semantic search. The field is reserved in the schema and stays <code>null</code>.</li>
+        <li>No cloud storage. Local filesystem only; the clip sits in Google&rsquo;s File API for 48h during processing and nowhere else.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ FLOW ============ -->
+  <section class="band">
+    <h2>Feeding it a 10-minute video</h2>
+
+    <div class="measure">
+      <p>
+        Say a 10:00 clip of small-business b-roll &mdash; a restaurant kitchen, vertical
+        1080&times;1920, roughly 140 cuts, someone talking over most of it. You run one command
+        and walk away. Here is what happens, and where the time goes.
+      </p>
+    </div>
+
+    <div class="budget">
+      <div class="budget-head">
+        <h3 style="margin: 0;">Wall-clock budget</h3>
+        <div class="budget-total">estimated <b>3:45</b> against a <b>5:00</b> target</div>
+      </div>
+
+      <div class="bar" role="img" aria-label="Time budget: probe under one second, shot detection 45 seconds, transcription 90 seconds, Gemini call 75 seconds, quality scoring 15 seconds, assembly 2 seconds, leaving 72 seconds of headroom against a 5 minute target.">
+        <div class="seg det" style="--w: 0.3%;"></div>
+        <div class="seg det" style="--w: 15%;"><span class="seg-label">shots 45s</span></div>
+        <div class="seg det" style="--w: 30%;"><span class="seg-label">transcribe 90s</span></div>
+        <div class="seg mod" style="--w: 25%;"><span class="seg-label">gemini 75s</span></div>
+        <div class="seg det" style="--w: 5%;"><span class="seg-label">15s</span></div>
+        <div class="seg det" style="--w: 0.7%;"></div>
+        <div class="seg free" style="--w: 24%;"><span class="seg-label">72s headroom</span></div>
+      </div>
+
+      <div class="ticks">
+        <span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span>
+      </div>
+
+      <div class="legend">
+        <span><i class="swatch sw-det"></i> deterministic &mdash; no model</span>
+        <span><i class="swatch sw-mod"></i> the one Gemini call</span>
+        <span><i class="swatch sw-free"></i> headroom</span>
+      </div>
+
+      <p class="caption">
+        Drawn to scale except <code>probe</code> and <code>build</code>, both sub-second. These
+        are estimates, not measurements &mdash; T009 replaces them with real numbers. The
+        biggest risk to the budget is transcription on CPU rather than GPU, which can multiply
+        that 90s several times over.
+      </p>
+    </div>
+
+    <div class="stages">
+
+      <div class="stage">
+        <div class="stage-n">1</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <span class="stage-title">Probe</span>
+            <span class="stage-mod">probe.py</span>
+            <span class="badge badge-det">ffprobe</span>
+            <span class="stage-time">&lt;1s</span>
+          </div>
+          <p>
+            Reads duration, frame rate, and pixel dimensions. Cheap, and it fails fast &mdash; if
+            ffmpeg is missing or the file is corrupt, you find out in a second rather than after
+            two minutes of transcription.
+          </p>
+          <div class="io"><b>in.mp4</b> <span class="arrow">&rarr;</span> <b>600.0s &middot; 29.97fps &middot; 1080&times;1920</b></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-n">2</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <span class="stage-title">Cut into shots</span>
+            <span class="stage-mod">scenes.py</span>
+            <span class="badge badge-det">PySceneDetect</span>
+            <span class="stage-time">~45s</span>
+          </div>
+          <p>
+            Walks all 18,000 frames looking for content changes and returns
+            <strong>frame-accurate</strong> boundaries. These timings are load-bearing: every
+            later stage indexes off them, and they are the only numbers precise enough to cut on.
+          </p>
+          <div class="io"><b>18,000 frames</b> <span class="arrow">&rarr;</span> <b>~140 shots</b> <span class="arrow">&rarr;</span> <b>shot_000 &hellip; shot_139</b></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-n">3</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <span class="stage-title">Transcribe every word</span>
+            <span class="stage-mod">transcribe.py</span>
+            <span class="badge badge-det">WhisperX</span>
+            <span class="stage-time">~90s</span>
+          </div>
+          <p>
+            Not sentence-level subtitles &mdash; <strong>per-word</strong> timings. That is what
+            makes it possible later to cut on a syllable, strip an &ldquo;um&rdquo;, or find the
+            exact frame someone says a product name. The slowest stage, and worth it.
+          </p>
+          <div class="io"><b>audio track</b> <span class="arrow">&rarr;</span> <b>~1,400 words</b> <span class="arrow">&rarr;</span> <b>{ t: 42.10, d: 0.22, w: "so" }</b></div>
+        </div>
+      </div>
+
+      <div class="stage is-model">
+        <div class="stage-n">4</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <span class="stage-title">Watch the whole thing, once</span>
+            <span class="stage-mod">gemini.py</span>
+            <span class="badge badge-mod">gemini-3.5-flash</span>
+            <span class="stage-time">~75s</span>
+          </div>
+          <p>
+            The clip goes up to the File API, and <strong>one</strong> request asks the model to
+            watch all ten minutes &mdash; frames at 0.5fps plus the audio &mdash; and return
+            structured JSON: what each shot shows, how strong a moment it is from 0 to 1, why,
+            and tags.
+          </p>
+          <p>
+            Because it sees the whole video in one context, &ldquo;how strong a moment&rdquo;
+            means <em>relative to everything else in this clip</em>. A per-shot captioner cannot
+            express that at any price.
+          </p>
+          <div class="io"><b>300 sampled frames + audio</b> <span class="arrow">&rarr;</span> <b>1 request</b> <span class="arrow">&rarr;</span> <b>~140 judgments</b></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-n">5</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <span class="stage-title">Score the image quality</span>
+            <span class="stage-mod">quality.py</span>
+            <span class="badge badge-det">OpenCV</span>
+            <span class="stage-time">~15s</span>
+          </div>
+          <p>
+            Pulls one keyframe per shot and measures focus and exposure with a Laplacian. No
+            model, no opinion &mdash; the same pixels always give the same number. A gorgeous
+            composition that happens to be out of focus scores high on judgment and low here,
+            which is exactly the distinction an editor needs.
+          </p>
+          <div class="io"><b>140 keyframes</b> <span class="arrow">&rarr;</span> <b>quality: 0.79</b></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-n">6</div>
+        <div class="stage-body">
+          <div class="stage-head">
+            <span class="stage-title">Join, validate, write</span>
+            <span class="stage-mod">build.py</span>
+            <span class="badge badge-det">orchestrator</span>
+            <span class="stage-time">~2s</span>
+          </div>
+          <p>
+            Merges the model&rsquo;s judgment onto the frame-accurate shot list, slices the word
+            stream into per-shot transcripts, flags the strong moments, and checks the whole
+            document against the shared schema <em>before</em> writing. A run that fails
+            validation leaves no file behind rather than a plausible-looking broken one.
+          </p>
+          <div class="io"><b>5 streams</b> <span class="arrow">&rarr;</span> <b>work/footage_index.json</b> <span class="arrow">&rarr;</span> <b>~100 KB</b></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ THE RULE ============ -->
+  <section class="band">
+    <h2>Why one call, and not one per shot</h2>
+
+    <div class="rulebox">
+      <div class="figure hot">
+        <div class="figure-n">140</div>
+        <div class="figure-label">calls, the naive way</div>
+        <div class="figure-note">
+          One per shot. At the free tier&rsquo;s 10 requests/minute that is 14 minutes of waiting
+          before any work happens &mdash; and it exhausts the daily quota on a single video.
+        </div>
+      </div>
+      <div class="figure good">
+        <div class="figure-n">1</div>
+        <div class="figure-label">call, this design</div>
+        <div class="figure-note">
+          The whole clip, once. Well inside every rate limit, and the model gets to compare shots
+          against each other instead of judging each in isolation.
+        </div>
+      </div>
+      <div class="figure">
+        <div class="figure-n">~30K</div>
+        <div class="figure-label">tokens per video</div>
+        <div class="figure-note">
+          300 frames at 66 tokens each (<code>media_resolution: low</code>) plus audio, against a
+          250K-per-minute cap. Cheap enough to re-run all day while tuning the prompt.
+        </div>
+      </div>
+    </div>
+
+    <p class="caption measure">
+      This is a product decision, not an optimization. A design that drifts back toward per-shot
+      calls is wrong even if it runs &mdash; it throws away the cross-shot reasoning that is the
+      entire reason to take Path B.
+    </p>
+  </section>
+
+  <!-- ============ WHO DECIDES ============ -->
+  <section class="band">
+    <h2>What the model decides, and what it never touches</h2>
+
+    <div class="measure">
+      <p>
+        The split that keeps this honest: <strong>the model is asked for judgment, never for
+        measurement</strong>. Anything that has to be exact or reproducible is computed
+        classically. Gemini's own timestamps are only accurate to the second &mdash; useless for
+        cutting &mdash; so they are used for nothing but matching its output to the real shots.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Decided by</th><th>Why it sits there</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="field">t_start, t_end</td>
+            <td class="who who-det">PySceneDetect</td>
+            <td>Frame-accurate. The model&rsquo;s guesses are second-granular.</td>
+          </tr>
+          <tr>
+            <td class="field">transcript</td>
+            <td class="who who-det">WhisperX</td>
+            <td>Word-level timing drives precise cuts and filler removal.</td>
+          </tr>
+          <tr>
+            <td class="field">quality</td>
+            <td class="who who-det">OpenCV</td>
+            <td>Must be reproducible across runs and across both A/B paths.</td>
+          </tr>
+          <tr>
+            <td class="field">caption</td>
+            <td class="who who-mod">Gemini</td>
+            <td>Describing what is happening is judgment.</td>
+          </tr>
+          <tr>
+            <td class="field">editorial_score</td>
+            <td class="who who-mod">Gemini</td>
+            <td>How strong a moment, 0&ndash;1. The whole point of Path B.</td>
+          </tr>
+          <tr>
+            <td class="field">moment_reason</td>
+            <td class="who who-mod">Gemini</td>
+            <td>The justification behind the score &mdash; evidence, not decoration.</td>
+          </tr>
+          <tr>
+            <td class="field">tags</td>
+            <td class="who who-mod">Gemini</td>
+            <td>Informed by the whole video, not one frame.</td>
+          </tr>
+          <tr>
+            <td class="field">is_candidate</td>
+            <td class="who who-drv">derived</td>
+            <td>A threshold over <code>editorial_score</code>, not a separate answer.</td>
+          </tr>
+          <tr>
+            <td class="field">embedding</td>
+            <td class="who who-drv">reserved</td>
+            <td>Stays <code>null</code>. Exists so Phase 2 is not a schema break.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ OUTPUT ============ -->
+  <section class="band">
+    <h2>What lands on disk</h2>
+
+    <div class="measure">
+      <p>
+        One file, roughly 100&nbsp;KB, containing every shot &mdash; not a curated top ten.
+        &ldquo;Best moments&rdquo; is a filter you apply later, which is what keeps both A/B paths
+        emitting the identical shape.
+      </p>
+    </div>
+
+<pre><i>work/footage_index.json</i>
+{
+  "video":      { "path": "in.mp4", "duration_s": 600.0, <u>"fps": 29.97</u>, "w": 1080, "h": 1920 },
+  "index_meta": { <b>"path_variant": "gemini"</b>, "model": "gemini-3.5-flash",
+                  "media_resolution": "low", "sample_fps": 0.5 },
+
+  "shots": [ <i>&hellip; 140 of these &hellip;</i>
+    {
+      "id":              "shot_007",
+      <u>"t_start":         42.10,</u>              <i>&larr; PySceneDetect, frame-accurate</i>
+      <u>"t_end":           48.33,</u>
+      <u>"transcript":      "so this is our weekend brunch special",</u>  <i>&larr; WhisperX</i>
+      <b>"caption":         "chef plating a dosa, steam rising, centered subject, warm light",</b>
+      <b>"editorial_score": 0.86,</b>               <i>&larr; Gemini, judged against the whole clip</i>
+      <b>"moment_reason":   "hero food shot, clean framing, natural sound bite",</b>
+      "is_candidate":    true,                <i>&larr; derived from the score</i>
+      <b>"tags":            ["food", "indoor", "hero"],</b>
+      <u>"quality":         0.79,</u>               <i>&larr; OpenCV, deterministic</i>
+      "embedding":       null                 <i>&larr; reserved for Phase 2</i>
+    }
+  ],
+
+  "words": [ { "t": 42.10, "d": 0.22, "w": "so" }, <i>&hellip; ~1,400 more &hellip;</i> ]
+}</pre>
+
+    <h3 style="margin-top: 0.8rem;">Which makes questions like these cheap</h3>
+
+    <div class="queries">
+      <div class="query">
+        <div class="ask">&ldquo;Find me the three strongest food shots with clean audio.&rdquo;</div>
+        <div class="becomes">filter <b>is_candidate</b> &amp; tags &ni; food &amp; transcript &ne; "" &rarr; sort <b>editorial_score</b> &rarr; take 3</div>
+      </div>
+      <div class="query">
+        <div class="ask">&ldquo;Where does she say &lsquo;brunch&rsquo;?&rdquo;</div>
+        <div class="becomes">scan <b>words[]</b> &rarr; t = 44.8 &rarr; the shot whose range contains it</div>
+      </div>
+      <div class="query">
+        <div class="ask">&ldquo;Give me only usable silent b-roll.&rdquo;</div>
+        <div class="becomes">filter <b>quality</b> &gt; 0.6 &amp; transcript = "" &rarr; sort by duration</div>
+      </div>
+      <div class="query">
+        <div class="ask">&ldquo;Which path described shot 7 better?&rdquo;</div>
+        <div class="becomes">diff <b>caption</b> &amp; <b>moment_reason</b> across the two index files</div>
+      </div>
+    </div>
+
+    <p class="caption measure">
+      Every one of those is a filter over text and numbers. No video decoding, no model call,
+      no waiting. That is what the index buys.
+    </p>
+  </section>
+
+  <!-- ============ STATE ============ -->
+  <section class="band">
+    <h2>Where it stands today</h2>
+
+    <div class="measure">
+      <p>
+        The repo is scaffolded and the contract is written, but <strong>no pipeline logic
+        exists</strong> &mdash; every module raises <code>NotImplementedError</code> pointing at
+        its task file. The schema is the one real thing, because both repos have to agree on it
+        before either writes more code.
+      </p>
+    </div>
+
+    <div class="tasks">
+      <div class="task"><span class="tid">T001</span> ffprobe wrapper</div>
+      <div class="task"><span class="tid">T002</span> Shot detection</div>
+      <div class="task"><span class="tid">T003</span> Word-level transcript</div>
+      <div class="task"><span class="tid">T004</span> The one Gemini call</div>
+      <div class="task"><span class="tid">T005</span> Quality scoring</div>
+      <div class="task partial"><span class="tid">T006</span> Schema &mdash; partly done</div>
+      <div class="task"><span class="tid">T007</span> Orchestrator</div>
+      <div class="task"><span class="tid">T008</span> CLI</div>
+      <div class="task blocked"><span class="tid">T009</span> End-to-end proof &mdash; blocked</div>
+      <div class="task blocked"><span class="tid">T010</span> Lock the contract &mdash; do first</div>
+    </div>
+
+    <div class="notgetting measure">
+      <h3>The thing standing in the way</h3>
+      <p style="margin: 0;">
+        Three decisions still need the co-founder, not a solo call: whether the output is a full
+        index or a top-N list, whether both paths share the shot-detection and transcription
+        settings, and which single clip both sides run on. Until that last one is picked, T009
+        &mdash; the task that proves any of the claims on this page &mdash; cannot run at all.
+        It is one message, and it unblocks the experiment.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Spec: docs/IDEA.md</span>
+    <span>Contract: elvideo/schema/footage_index.schema.json</span>
+    <span>Lineage: LAVE language-index (arXiv:2402.10294)</span>
+    <span>Estimates, not measurements &mdash; T009 replaces them</span>
+  </footer>
+
+</div>
