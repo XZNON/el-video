@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/elvideo/elvideo-gemini/schema/footage_index.schema.json",
+  "title": "footage_index",
+  "description": "Shot-level text index of one video. SHARED CONTRACT: emitted identically by Path A (El-Video, local VLM) and Path B (elvideo-gemini, Gemini-native). Changing this shape is a two-repo change - log it in state/decisions-log.md and sync manually. See docs/schema.md.",
+  "type": "object",
+  "required": ["video", "index_meta", "shots", "words"],
+  "additionalProperties": false,
+  "properties": {
+    "video": {
+      "type": "object",
+      "description": "ffprobe output, uninterpreted. Produced by elvideo/index/probe.py.",
+      "required": ["path", "duration_s", "fps", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the source video, as given on the CLI.",
+          "minLength": 1
+        },
+        "duration_s": {
+          "type": "number",
+          "description": "Duration in seconds.",
+          "exclusiveMinimum": 0
+        },
+        "fps": {
+          "type": "number",
+          "description": "Container frame rate. NOT the Gemini sampling rate - see index_meta.sample_fps.",
+          "exclusiveMinimum": 0
+        },
+        "w": {
+          "type": "integer",
+          "description": "Width in pixels.",
+          "exclusiveMinimum": 0
+        },
+        "h": {
+          "type": "integer",
+          "description": "Height in pixels.",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "index_meta": {
+      "type": "object",
+      "description": "How this index was produced. Must reflect what actually ran, not the defaults - this is what makes two indexes of the same footage comparable.",
+      "required": ["path_variant", "model", "media_resolution", "sample_fps"],
+      "additionalProperties": false,
+      "properties": {
+        "path_variant": {
+          "description": "The A/B discriminator. This repo always emits 'gemini'.",
+          "enum": ["gemini", "local"]
+        },
+        "model": {
+          "type": "string",
+          "description": "Understanding model that produced the captions. Path B pins 'gemini-3.5-flash'; Path A puts its local model name here.",
+          "minLength": 1
+        },
+        "media_resolution": {
+          "description": "Gemini media resolution. Path B uses 'low' (66 tok/frame, not 258).",
+          "enum": ["low", "medium", "high"]
+        },
+        "sample_fps": {
+          "type": "number",
+          "description": "Frames per second fed to the understanding model. Path B default 0.5; per-video knob, record the value actually used.",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "shots": {
+      "type": "array",
+      "description": "One entry per shot boundary, ordered by t_start. FULL index, not top-N: 'best moments' is a filter on is_candidate / a sort on editorial_score.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "t_start",
+          "t_end",
+          "transcript",
+          "caption",
+          "editorial_score",
+          "moment_reason",
+          "is_candidate",
+          "tags",
+          "quality",
+          "embedding"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Zero-padded ordinal, e.g. 'shot_007'.",
+            "pattern": "^shot_[0-9]{3,}$"
+          },
+          "t_start": {
+            "type": "number",
+            "description": "Shot start, seconds. Frame-accurate, from PySceneDetect. NEVER from the understanding model - its timestamps are second-granular.",
+            "minimum": 0
+          },
+          "t_end": {
+            "type": "number",
+            "description": "Shot end, seconds. Frame-accurate, from PySceneDetect.",
+            "exclusiveMinimum": 0
+          },
+          "transcript": {
+            "type": "string",
+            "description": "Words falling inside [t_start, t_end), joined. Empty string when silent - not null."
+          },
+          "caption": {
+            "type": "string",
+            "description": "What is visually happening in the shot. From the understanding model."
+          },
+          "editorial_score": {
+            "type": ["number", "null"],
+            "description": "How good a moment, 0-1. Path B's edge. Path A may leave this null - that gap IS the A/B signal.",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "moment_reason": {
+            "type": ["string", "null"],
+            "description": "Why that editorial_score. Path B's edge. Path A may leave this null."
+          },
+          "is_candidate": {
+            "type": "boolean",
+            "description": "Flagged good-moment. Derived view over editorial_score, not a model output."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Free-form lowercase tags from the understanding model.",
+            "items": { "type": "string" }
+          },
+          "quality": {
+            "type": "number",
+            "description": "OpenCV Laplacian + exposure, 0-1. Deterministic, no LLM involved.",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "embedding": {
+            "type": ["array", "null"],
+            "description": "RESERVED - stays null in v1. No code computes it. Exists so Phase-2 cross-video search is not a schema break.",
+            "items": { "type": "number" }
+          }
+        }
+      }
+    },
+    "words": {
+      "type": "array",
+      "description": "Flat word-level timing for the whole video, not nested under shots. Drives precise cuts and filler removal, and is what words_in_range() slices per shot. Keys are short because there are thousands per video.",
+      "items": {
+        "type": "object",
+        "required": ["t", "d", "w"],
+        "additionalProperties": false,
+        "properties": {
+          "t": {
+            "type": "number",
+            "description": "Word start time, seconds.",
+            "minimum": 0
+          },
+          "d": {
+            "type": "number",
+            "description": "Word duration, seconds.",
+            "minimum": 0
+          },
+          "w": {
+            "type": "string",
+            "description": "The word."
+          }
+        }
+      }
+    }
+  }
+}

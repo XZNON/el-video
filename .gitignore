@@ -1,0 +1,26 @@
+# Runtime output — keyframes, footage_index.json, scratch
+work/*
+!work/.gitkeep
+
+# Secrets
+.env
+
+# Media. The A/B test video is decided in T010; keep clips out of git until then.
+in.mp4
+*.mp4
+*.mov
+*.mkv
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv

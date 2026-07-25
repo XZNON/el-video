@@ -1,0 +1,15 @@
+{
+  "current_task": null,
+  "status": "scaffold_complete",
+  "completed_tasks": [],
+  "blockers": [
+    "T009 cannot run until the A/B test video is agreed (D-003)",
+    "uv sync has not been run — deps are resolved and locked but not installed (whisperx pulls torch, multi-GB)"
+  ],
+  "open_decisions": [
+    "full-index-vs-topN",
+    "shared-vs-vendored-detect",
+    "ab-test-video"
+  ],
+  "last_updated": "2026-07-25T12:04:00Z"
+}

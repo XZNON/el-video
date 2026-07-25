@@ -1,0 +1,51 @@
+[project]
+name = "elvideo"
+version = "0.1.0"
+description = "Path B (Gemini-native) shot-level video understanding index -> footage_index.json"
+readme = "README.md"
+requires-python = ">=3.11, <3.13"
+dependencies = [
+    "google-genai>=2.14.0",
+    "jsonschema>=4.26.0",
+    "opencv-python>=5.0.0.93",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "rich>=15.0.0",
+    "scenedetect>=0.7.1",
+    "tenacity>=9.1.4",
+    "typer>=0.27.0",
+    "whisperx>=3.8.6",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# .agents/ is vendored tooling, not this project's source.
+extend-exclude = [".agents", "work"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+# Third-party libs below ship no type stubs; don't fail the build on that.
+[[tool.mypy.overrides]]
+module = ["cv2.*", "scenedetect.*", "whisperx.*", "numpy.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# The project is not installed as a package; make `import elvideo` resolve from the repo root.
+pythonpath = ["."]
