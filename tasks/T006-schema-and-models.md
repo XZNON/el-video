@@ -43,6 +43,10 @@ with the co-founder, and implementing the validator.**
       (`additionalProperties: false` is deliberate); a document with `t_end < t_start` fails.
 - [ ] `Shot.id` pattern accommodates 100+ shots (`^shot_[0-9]{3,}$`, not exactly-3).
 - [ ] **D-001 resolved and logged** — full index + `is_candidate` (assumed) vs separate top-N.
+- [ ] **D-013 resolved and logged** — whether `index_meta` gains `scene_detector` and
+      `scene_threshold`. Today the contract records every setting that shapes the *understanding*
+      output and none that shapes the *shot boundaries*, so two indexes can disagree on shot
+      count with nothing in either file explaining why.
 - [ ] The schema file is shared with the co-founder and confirmed against what Path A emits. Any
       divergence is logged in `state/decisions-log.md`, not patched over.
 - [ ] `uv run pytest tests/test_schema.py` passes clean.

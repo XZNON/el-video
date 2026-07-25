@@ -41,16 +41,31 @@ use PySceneDetect" is not enough resolution to make the diff clean.
 
 ## D-003 — The A/B test video
 
-**Status:** `unresolved` · **Owner:** needs the co-founder · **Blocks:** T009 entirely · **Resolved in:** T010
+**Status:** `resolved` · **Date:** 2026-07-25 · **Unblocks:** T009
 
-One agreed ~10-min clip both paths run on, checked into the repo or on a shared drive link.
+One clip, agreed with the co-founder, both paths run on it. Sits at repo root as `in.mp4` and is
+gitignored (`*.mp4`) — it is **not** distributed via this repo, both sides hold the same file.
 
-`docs/IDEA.md`: *"Pick it before coding so 'done' is comparable."*
+Measured on this machine, so "done" is comparable:
 
-**What resolving it requires:** picking a file. Criteria worth agreeing on: ~10 min;
-representative footage (SMB b-roll, not a stock demo reel); has speech, or `words[]` goes
-untested; has real cuts, or shot detection goes untested; legally shareable if it lands in a
-hackathon writeup.
+| | |
+|---|---|
+| Duration | 428.11s (7:08) |
+| Video | h264, 1280×720, 25 fps, 10,701 frames |
+| Audio | AAC stereo, 44.1 kHz — present, so `words[]` gets exercised |
+| Size | 48 MB |
+| Shots | **117** at `ContentDetector(threshold=27.0)` — see D-012 |
+
+Satisfies every criterion in `docs/IDEA.md` § *Open decisions*: under 10 min, has speech, has
+real cuts, dense enough to be non-trivial (117 is inside the spec's 100–300 band).
+
+**Deviation from the assumed footage:** 1280×720 landscape, not the vertical 1080×1920 the spec
+sketches for SMB b-roll. Irrelevant to the pipeline — no code branches on orientation — but worth
+knowing when reading the A/B writeup.
+
+**Budget implications, recomputed for 7:08 rather than 10:00:** 214 sampled frames at 0.5 fps ×
+66 tok ≈ **~14K visual tokens**, roughly half the 30K target. Room to raise `--fps` to 1.0 if 0.5
+proves too coarse for this footage.
 
 ---
 
@@ -138,6 +153,92 @@ redundant.
 and its shape shifts between pydantic versions — which makes it useless for a clean `diff`
 against Path A's output. The hand-written schema is the interoperability artifact;
 `tests/test_schema.py` asserts field-name parity so the redundancy can't silently drift.
+
+---
+
+## D-011 — mypy checks against 3.12, not the 3.11 floor
+
+**Status:** `resolved` · **Date:** 2026-07-25 · **Scope:** local (tooling config only)
+
+`uv sync` installed numpy 2.5.1, whose bundled stubs use PEP 695 `type` statements. mypy refuses
+to parse those below 3.12: `numpy/__init__.pyi:737: error: Type statement is only supported in
+Python 3.12 and greater [syntax]`, and it is fatal — *"errors prevented further checking"*.
+Neither `ignore_missing_imports` nor `follow_imports = "skip"` suppresses it, because the failure
+happens at parse time, before per-module rules apply.
+
+`quality.py` imports numpy under `TYPE_CHECKING` for `score_frame(img: np.ndarray)`, so the stub
+gets pulled in.
+
+**Decision:** set `[tool.mypy] python_version = "3.12"`.
+
+**What this costs:** mypy no longer catches 3.12-only syntax leaking into our own code, while
+`requires-python` still claims `>=3.11`. `ruff`'s `target-version = "py311"` remains the guard
+for that. Runtime 3.11 support is unaffected — this is purely a stub-parsing gate.
+
+**Revisit if:** the project is ever actually run on 3.11 in anger, or numpy's stubs stop needing
+it. Pinning numpy below 2.5 would be the alternative, and is not worth it.
+
+---
+
+## D-012 — Shot detector settings: `ContentDetector(threshold=27.0)`
+
+**Status:** `resolved` for this repo · **Date:** 2026-07-25 · **Feeds:** T002 · **Cross-repo:** must be matched by Path A (D-002)
+
+Measured on `in.mp4` with a throwaway script — **not** T002's implementation, which still has to
+be written:
+
+| | |
+|---|---|
+| Detector | `ContentDetector` |
+| Threshold | **27.0** (PySceneDetect's own default) |
+| Result | 117 shots over 428.04s, gapless |
+| Distribution | median 2.68s · mean 3.66s · shortest 0.64s · longest 23.84s |
+| Sub-1s shots | 4 |
+| Detect wall-clock | 20.8s |
+
+**Decision:** adopt `ContentDetector(threshold=27.0)` as the default, and treat the threshold the
+same way `docs/IDEA.md` treats `fps` — a **per-video CLI knob**, never edited globally to fix one
+clip.
+
+**What the threshold actually does,** so nobody tunes it blind: `ContentDetector` compares HSV
+content between adjacent frames and calls a cut past the delta. Lower (~20) is more sensitive and
+starts splitting *within* a shot on fast pans, flashes, or someone crossing frame; higher (~35)
+misses real cuts in dark or low-contrast footage.
+
+**Known blind spot, independent of the value:** it detects **hard cuts**. Crossfades and
+dissolves are gradual and get missed. Footage cut with transitions needs `AdaptiveDetector` — a
+detector change, not a threshold change. Not an issue on the current test clip.
+
+**Cross-repo:** Path A must use the identical detector *and* threshold, or shot boundaries differ
+and a caption difference in the A/B could just be a dial difference. See D-002.
+
+---
+
+## D-013 — `index_meta` does not record how the shots were cut
+
+**Status:** `unresolved` · **Affects:** T006, T007 · **Cross-repo:** schema change, needs the co-founder
+
+`index_meta` currently captures `path_variant`, `model`, `media_resolution`, `sample_fps` — every
+setting that changes the *understanding* output. It captures **nothing** about shot detection.
+
+So two `footage_index.json` files can disagree on shot count, and neither file explains why.
+Since shot boundaries are the spine the whole index hangs off, that is a bigger provenance hole
+than any of the fields currently recorded. It surfaced while measuring D-012: 27.0 produced 117
+shots, and nothing in the emitted document would say so.
+
+**Proposal:** add `scene_detector` (string) and `scene_threshold` (number) to `index_meta`.
+
+**Cost:** `index_meta` is the shared contract, so this is a two-repo change with no automated
+sync — exactly the risk `docs/IDEA.md` flags. It also touches both schema artifacts
+(`models.py` + `footage_index.schema.json`) and `tests/test_schema.py`.
+
+**Argument for doing it anyway:** the contract's job is to make two indexes comparable. Right now
+it records the easy half.
+
+**Argument against:** every field added is another thing both repos must agree on, and the values
+could equally live in the session log rather than the artifact.
+
+**Resolve during T006**, alongside D-001, before the schema is locked.
 
 ---
 

@@ -13,8 +13,8 @@ Kept in sync by `/checkpoint`.
 | [T006](T006-schema-and-models.md) | `schema/` — contract + validator | `partial` | Models + JSON Schema seeded by scaffold; `validate_index()` and the co-founder sign-off remain. |
 | [T007](T007-build-orchestrator.md) | `build.py` — orchestrator | `not_started` | The join point. Alignment is the hard part. Per-stage timing. Needs T001–T006. |
 | [T008](T008-cli.md) | `cli.py` — entrypoint | `not_started` | Thin wrapper over `build_index`. Needs T007. |
-| [T009](T009-e2e-validation.md) | E2E validation | `not_started` | **Blocked on D-003** (which video). Proves every DoD claim with a number. |
-| [T010](T010-schema-sync-checkpoint.md) | Schema-sync checkpoint | `not_started` | Resolves D-001/D-002/D-003. **Numbered last, should happen first.** |
+| [T009](T009-e2e-validation.md) | E2E validation | `not_started` | Unblocked — video picked (`in.mp4`, 7:08, 117 shots). Proves every DoD claim with a number. |
+| [T010](T010-schema-sync-checkpoint.md) | Schema-sync checkpoint | `not_started` | D-003 done. D-001/D-002 remain, plus D-013. |
 
 ## Suggested order
 

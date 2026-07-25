@@ -1,6 +1,7 @@
 # T009 — E2E validation on the A/B test video
 
-**Status:** `not_started` — **blocked on D-003** (which video)
+**Status:** `not_started` — **unblocked.** The video is picked: `in.mp4`, 7:08, 117 shots. See
+`state/decisions-log.md` D-003 for its full measured profile.
 
 ## Goal
 
@@ -14,9 +15,21 @@ the hackathon writeup later.
 
 - `docs/IDEA.md` § *Definition of done (s1)* — the checklist this task exists to satisfy
 - `docs/IDEA.md` § *Gemini call settings*, § *Storage & speed*
-- `state/decisions-log.md` **D-003** (the agreed test video) — **this task cannot start until
-  it's resolved**
-- Tasks: T001–T008, all complete. T010 unblocks D-003.
+- `state/decisions-log.md` **D-003** (the agreed test video) — resolved, with the clip's measured
+  profile
+- Tasks: T001–T008, all complete.
+
+## Known before you start
+
+From D-003 and D-012, so a failure is recognisable rather than merely surprising:
+
+| | |
+|---|---|
+| Clip | `in.mp4` — 7:08 (428.11s), 1280×720, 25 fps, AAC stereo |
+| Expected shots | **117** at `ContentDetector(threshold=27.0)` |
+| Expected visual tokens | 214 frames × 66 ≈ **~14K**, roughly half the 30K target |
+
+A shot count far off 117 means the detector settings drifted, not that the footage changed.
 
 ## Inputs / outputs
 

@@ -52,10 +52,32 @@ Ids: `shot_000`, `shot_001`, … zero-padded to at least 3, assigned in `t_start
 - **Gemini's timestamps are never used for `t_start` / `t_end`.** They're second-granular. This
   module is the only source of those two fields.
 
+## Already measured — start from this, don't rediscover it
+
+A throwaway script (not this implementation) ran detection on the real test clip. Results are in
+`state/decisions-log.md` **D-012**:
+
+- **`ContentDetector(threshold=27.0)`** is the adopted default. Treat the threshold like `fps`:
+  a per-video CLI knob, never edited globally to fix one clip.
+- On `in.mp4` (428.04s) it produced **117 shots**, gapless — median 2.68s, shortest 0.64s,
+  longest 23.84s, 4 shots under 1s. Detection took **20.8s**.
+- Those 117 shots are the number to check the "gapless and non-overlapping" criterion against.
+
+**`get_seconds()` is deprecated** in scenedetect 0.7.1 — `DeprecationWarning: get_seconds() is
+deprecated, use the 'seconds' property instead`. Use `.seconds` so the module doesn't ship
+warnings.
+
 ## Notes
 
 `ContentDetector` is the default choice; threshold is the tuning knob. Whatever you pick, it must
 be written down and shared, not left as an implicit library default — Path A has to match it.
+
+`ContentDetector` catches **hard cuts** only; crossfades and dissolves get missed and would need
+`AdaptiveDetector`. Not a problem on the current test clip, but it is the first thing to suspect
+if some future footage returns implausibly few shots.
+
+Nothing in `footage_index.json` currently records which detector or threshold produced the
+boundaries — see **D-013**, open, to be settled in T006.
 
 Talking-head footage with no hard cuts is the degenerate case worth testing early: it should
 produce one long shot, and the rest of the pipeline should handle that without special-casing.

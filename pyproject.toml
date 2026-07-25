@@ -34,7 +34,11 @@ extend-exclude = [".agents", "work"]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
-python_version = "3.11"
+# 3.12, not the 3.11 floor: numpy 2.5's bundled stubs use PEP 695 `type` statements, which mypy
+# refuses to parse below 3.12 — a hard failure, not suppressible per-module. Runtime support for
+# 3.11 is unaffected. `ruff.target-version = "py311"` still guards the floor. See decisions-log
+# D-011.
+python_version = "3.12"
 strict = true
 warn_unused_ignores = true
 disallow_untyped_defs = true

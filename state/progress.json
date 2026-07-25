@@ -2,14 +2,29 @@
   "current_task": null,
   "status": "scaffold_complete",
   "completed_tasks": [],
-  "blockers": [
-    "T009 cannot run until the A/B test video is agreed (D-003)",
-    "uv sync has not been run — deps are resolved and locked but not installed (whisperx pulls torch, multi-GB)"
-  ],
+  "blockers": [],
+  "env": {
+    "deps_installed": true,
+    "python": "3.12",
+    "torch": "2.8.0",
+    "whisperx": "3.8.6",
+    "gates": "pytest 8 passed, ruff clean, mypy strict clean"
+  },
+  "test_video": {
+    "path": "in.mp4",
+    "duration_s": 428.11,
+    "fps": 25.0,
+    "w": 1280,
+    "h": 720,
+    "has_audio": true,
+    "shots_at_threshold_27": 117,
+    "note": "gitignored; both A/B paths hold the same file. See decisions-log D-003."
+  },
   "open_decisions": [
     "full-index-vs-topN",
     "shared-vs-vendored-detect",
-    "ab-test-video"
+    "understand-sees-shot-list",
+    "index-meta-records-detector"
   ],
-  "last_updated": "2026-07-25T12:04:00Z"
+  "last_updated": "2026-07-25T13:39:30Z"
 }
