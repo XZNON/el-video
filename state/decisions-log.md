@@ -411,3 +411,94 @@ constraint 6 or leave it as the intended future state.**
 **Reversal condition:** if a Path A repo does appear, D-001 / D-002 / D-013 become proposals
 again and must be re-confirmed against what it actually emits. The A/B claim in the writeup
 depends on that, and nothing in this repo can detect it automatically.
+
+---
+
+## D-017 — Quality formula and its normalization constants
+
+**Status:** `resolved` for this repo · **Date:** 2026-07-26 · **Feeds:** T005 · **Cross-repo:** must be matched by Path A (D-002)
+
+`docs/IDEA.md` says only *"OpenCV Laplacian + exposure, deterministic"*. These are the concrete
+numbers behind that phrase, now module constants in `elvideo/index/quality.py` and guarded by
+`tests/test_quality.py::test_constants_are_recorded`:
+
+```
+sharpness = min(sqrt(laplacian_variance / 1000.0), 1.0)
+brightness_term = max(1 - |mean_luma/255 - 0.5| / 0.5, 0)
+clipping_term   = max(1 - clipped_fraction / 0.5, 0)      # clipped = px <= 8 or px >= 247
+quality = round(0.7 * sharpness + 0.3 * brightness_term * clipping_term, 4)
+```
+
+| Constant | Value | Why |
+|---|---|---|
+| `SHARPNESS_SATURATION` | 1000.0 | Variance treated as fully sharp — Laplacian std ≈ 31.6 gray levels |
+| `W_SHARPNESS` / `W_EXPOSURE` | 0.7 / 0.3 | Focus is unrecoverable; exposure is gradeable |
+| `EXPOSURE_TARGET` | 0.5 | Mid-gray; penalized linearly in both directions |
+| `CLIP_LOW` / `CLIP_HIGH` | 8 / 247 | 8-bit levels past which no detail is recoverable |
+| `CLIP_SATURATION` | 0.5 | Half the frame clipped scores 0 on that term |
+| `SAMPLE_POSITION` | 0.5 | Midpoint of `[t_start, t_end)`, fixed |
+| `ROUND_DIGITS` | 4 | Coarser than cross-machine SIMD float noise |
+| `KEYFRAME_PNG_COMPRESSION` | 3 | Same frame, same PNG bytes; does not touch the score |
+
+**Why `sqrt`, not raw variance.** Laplacian variance is quadratic in contrast — doubling edge
+contrast quadruples it — so a linear normalization either crushes everything toward 0 or pins
+the top quartile at exactly 1.0. Its square root is the Laplacian *standard deviation*, in gray
+levels, linear in contrast. Measured on the 117 keyframes of `in.mp4`:
+
+| Normalization | mean | p10 | p50 | p90 | at ceiling |
+|---|---|---|---|---|---|
+| linear, sat 300 | 0.576 | 0.095 | 0.564 | 1.000 | **26/117** |
+| linear, sat 1000 | 0.219 | 0.029 | 0.169 | 0.503 | 0/117 |
+| **sqrt, sat 1000** | **0.425** | **0.169** | **0.411** | **0.709** | **0/117** |
+
+**Why saturation is 1000 and not the clip's own maximum.** Raw variance on `in.mp4` spans
+1.7–832.7 (median 169.2), so the sharpest real frame lands at 0.91 with headroom left. Pinning
+the constant to this clip's maximum would make the metric stop discriminating on better footage —
+a crisper camera has to be able to outscore the test clip.
+
+**Measured distribution of the final score, all 117 shots of `in.mp4`:**
+
+| | |
+|---|---|
+| Stage wall-clock | **18.8s** for 117 shots (0.161s/shot), including PNG keyframe writes |
+| min / p25 / median / p75 / max | 0.061 / 0.355 / 0.480 / 0.555 / 0.857 |
+| mean / stdev | 0.465 / 0.169 |
+| Distinct values at 2 decimals | 55 of 117 |
+| Frames at the 1.0 ceiling | 0 |
+
+That spread is the point of the measurement: a metric that returned ~0.8 for everything would be
+as broken as a model that scores everything 0.8. Asserted, not just eyeballed —
+`test_real_video_scores_spread` fails if the range collapses below 0.3 or distinct 2-dp values
+drop below 20.
+
+**Known limitation, inherited equally by both paths:** Laplacian variance is content-dependent. A
+plain wall, fog, or a dark night shot scores like a blurred frame because it genuinely carries no
+edge energy. That is the metric, not a bug — but it belongs in the A/B writeup, because a caption
+difference between paths must not be blamed on a `quality` field that both paths compute
+identically.
+
+**Speed note, not a blocker:** `score_shot()` opens its own `VideoCapture` per call, which costs
+~0.1s of the 0.161s per shot; a shared capture across shots measured 0.045s/shot (5.3s total).
+18.8s is 6% of the 300s budget, so the simpler signature wins for now. Worth a `/new-task` only
+if the budget tightens.
+
+---
+
+## D-018 — `score_shot()` takes an optional `shot_id`, so keyframes match index ids
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Scope:** local · **Feeds:** T005, T007
+
+`docs/IDEA.md` § *Storage & speed* wants keyframes at `work/keyframes/shot_###.png`, but the
+signature it fixes — `score_shot(path, t_start, t_end, work_dir)` — **is never given the shot id**.
+Left alone, the filename scheme would have emerged by accident.
+
+**Decision:** `shot_id: str | None = None` as a keyword-only argument — the same
+extend-a-fixed-signature pattern as `detect_shots(path, threshold=)` (D-012) and `understand()`'s
+boundaries kwarg (D-010). The positional call in `docs/IDEA.md` stays literally valid.
+
+**Fallback when omitted:** `shot_at_{sampled_ms:08d}ms.png`. Derived from the sampled timestamp,
+so it is unique per shot and two shots cannot overwrite each other — which a naive counter or a
+fixed name would.
+
+**T007 consequence:** `build.py` must pass `shot_id=shot.id`, or the keyframes on disk stop
+matching the ids in `footage_index.json` and the folder becomes unusable for debugging.

@@ -276,3 +276,107 @@ that verdict is why `base` was chosen over `small` (roughly 2–3× slower on CP
   `prompts/session-start/003-quality.md`. Smallest remaining task, no API key, no model download,
   and T002 already supplies the shot boundaries it samples within.
 - Then T004 (Path B core, now unambiguous), T007, T008, T009.
+
+---
+
+## 2026-07-26 — T005 · OpenCV quality scoring
+
+**Task(s):** T005 — `quality.py`, Laplacian sharpness + exposure
+**Status at end:** `done` — every acceptance criterion met, each ticked in the task file with the
+number that satisfies it.
+
+### Done
+
+- **`elvideo/index/quality.py`, full implementation.** `score_frame(img)` and
+  `score_shot(path, t_start, t_end, work_dir, *, shot_id=None)`. Formula:
+
+  ```
+  sharpness       = min(sqrt(laplacian_variance / 1000.0), 1.0)
+  brightness_term = max(1 - |mean_luma/255 - 0.5| / 0.5, 0)
+  clipping_term   = max(1 - clipped_fraction / 0.5, 0)      # px <= 8 or px >= 247
+  quality         = round(0.7*sharpness + 0.3*brightness_term*clipping_term, 4)
+  ```
+
+  Every constant is module-level and named (`SHARPNESS_SATURATION`, `W_SHARPNESS`, `W_EXPOSURE`,
+  `EXPOSURE_TARGET`, `CLIP_LOW`, `CLIP_HIGH`, `CLIP_SATURATION`, `SAMPLE_POSITION`,
+  `ROUND_DIGITS`, `KEYFRAME_PNG_COMPRESSION`) — the D-012 / D-015 precedent, guarded by a test.
+- **Sampling:** midpoint of `[t_start, t_end)`, fixed. Seeks via `CAP_PROP_POS_MSEC` rather than
+  decoding sequentially; falls back to a `t_start` seek once before raising, since a seek can land
+  past the last decodable frame on a shot at the tail of the file.
+- **Validation:** `_to_gray()` rejects non-arrays, empty arrays, non-uint8 dtypes, and bad channel
+  counts. uint8 is required rather than coerced — `CLIP_LOW` / `CLIP_HIGH` are 8-bit levels and a
+  float image would silently invalidate them.
+- **`tests/test_quality.py` — 19 tests + 1 slow.** Sharp-vs-blurred fixture pair (built
+  arithmetically, no binary in the repo; gap asserted `> 0.1`, not merely `<`), all-white and
+  all-black both exactly `0.0` with an explicit `NaN` check, flat mid-gray scoring exposure-only
+  (the documented content-dependence, pinned as behaviour), grayscale/BGRA parity, six
+  `ValueError` paths, determinism across repeated calls and array copies, keyframe naming both
+  ways, and a frame-for-frame proof that the midpoint is what gets extracted.
+- **Rounding is load-bearing, not cosmetic:** `cv2.Laplacian` dispatches to different SIMD kernels
+  per CPU, so raw float64 can differ in its last bits across machines. 4 decimals sits far coarser
+  than that noise and far finer than any decision made on this field, which is what makes
+  "bit-identical across runs and machines" true rather than aspirational.
+
+**Measured on `in.mp4` (117 shots) — logged as D-017:**
+
+| | |
+|---|---|
+| Stage wall-clock | **18.8s** (0.161s/shot), PNG keyframe writes included — 6% of the 300s budget |
+| min / p25 / median / p75 / max | 0.061 / 0.355 / 0.480 / 0.555 / 0.857 |
+| mean / stdev | 0.465 / 0.169 |
+| Distinct values at 2 dp | 55 of 117 |
+| Frames at the 1.0 ceiling | **0** |
+
+The spread is the check that mattered: a metric returning ~0.8 for everything would be as broken
+as a model that scores everything 0.8. `test_real_video_scores_spread` fails if the range collapses
+below 0.3 or distinct 2-dp values drop under 20, so the check survives the session.
+
+**Gates:** `pytest -m "not slow"` **54 passed** (was 35); `pytest -m "slow"` **2 passed in
+144.88s**; `ruff check .` clean; `mypy elvideo` strict clean, 12 files.
+
+### Not done / deferred
+
+- **Nothing from the task file.** All nine criteria met.
+- **Three-frame median sampling stays out of scope**, as the task file directed — `/new-task` it
+  if one frame per shot proves too noisy in T009.
+- **Per-call `VideoCapture` open kept, deliberately.** It costs ~0.1s of the 0.161s per shot; a
+  capture shared across shots measured 0.045s/shot (5.3s total for 117). At 6% of budget the
+  simpler signature won. If the budget tightens, this is the cheapest 13s in the pipeline.
+- **`docs/schema.md` and `docs/IDEA.md` untouched** — `quality` was always described as
+  "Laplacian + exposure, deterministic"; this session fills in the constants behind that phrase,
+  it doesn't change the contract.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-017 (new)** — the formula and every normalization constant, with the measured distribution.
+  Records **why square root, not raw variance**: variance is quadratic in contrast, so linear
+  normalization pinned 26 of 117 shots at exactly 1.0 at saturation 300, or crushed the median to
+  0.169 at saturation 1000. The square root is the Laplacian standard deviation — gray levels,
+  linear in contrast — and lands the median at 0.411 with nothing at the ceiling. Also records why
+  saturation is 1000 rather than this clip's own maximum of 832.7: pinning it to the test footage
+  would stop the metric discriminating on better footage.
+- **D-018 (new)** — `score_shot()` gains a keyword-only `shot_id: str | None = None`. The task
+  file flagged the tension directly: the criterion wants `shot_###.png` but the `docs/IDEA.md`
+  signature never passes the id. Same extend-a-fixed-signature pattern as D-012 and D-010, so the
+  positional call stays literally valid. Fallback name is `shot_at_{sampled_ms:08d}ms.png` —
+  timestamp-derived, so two shots cannot overwrite each other the way a fixed name would.
+  **T007 must pass `shot_id=shot.id`** or the keyframes on disk stop matching the index.
+- No conflicts with `docs/IDEA.md` — nothing to log under the CLAUDE.md conflict rule this session.
+
+### Blockers
+
+- **None.** `progress.json.blockers` stays empty.
+- Checked ahead for T004 rather than discovering it mid-session: **`.env` has a non-empty
+  `GEMINI_API_KEY`.** Last session flagged this as worth confirming before T004 starts, not during.
+- The D-016 owner follow-up is still open and still blocks nothing: whether to soften CLAUDE.md
+  hard constraint 6, which describes the Path A repo as a live sync risk.
+
+### Next
+
+- **T004 — `gemini.py`**, the Path B core: `prompts/session-start/004-gemini.md`. One
+  `generate_content` call per video, `gemini-3.5-flash` pinned, `media_resolution="low"`,
+  `fps=0.5`, shot boundaries in the prompt text per D-010. Prompt design is the real work; the API
+  plumbing is not.
+- Then T007 (orchestrator — must pass `shot_id=shot.id` per D-018 and populate `index_meta`'s
+  detector fields per D-013), T008, T009.

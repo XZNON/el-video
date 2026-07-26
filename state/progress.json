@@ -1,14 +1,15 @@
 {
   "current_task": null,
   "status": "task_complete",
-  "completed_tasks": ["T001", "T002", "T003", "T010"],
+  "completed_tasks": ["T001", "T002", "T003", "T005", "T010"],
   "blockers": [],
   "env": {
     "deps_installed": true,
     "python": "3.12",
     "torch": "2.8.0",
     "whisperx": "3.8.6",
-    "gates": "pytest 35 passed (-m 'not slow') + 1 slow passed in 104s, ruff clean, mypy strict clean"
+    "gates": "pytest 54 passed (-m 'not slow') + 2 slow passed in 144.9s, ruff clean, mypy strict clean (12 files)",
+    "gemini_api_key_present": true
   },
   "test_video": {
     "path": "in.mp4",
@@ -27,7 +28,9 @@
     "D-010": "understand() gets shot boundaries in the prompt text (option 2)",
     "D-013": "index_meta gains scene_detector + scene_threshold (shipped)",
     "D-015": "WhisperX base / int8 / cpu / en",
-    "D-016": "solo repo, no Path A counterparty; decisions owner-locked"
+    "D-016": "solo repo, no Path A counterparty; decisions owner-locked",
+    "D-017": "quality formula: 0.7*sqrt(lap_var/1000) + 0.3*brightness*clipping, rounded 4dp",
+    "D-018": "score_shot() takes optional shot_id kwarg; keyframes named after index ids"
   },
   "owner_follow_up": "CLAUDE.md hard constraint 6 and docs/IDEA.md still describe the co-founder repo as a live sync risk. Now aspirational. Left unedited on purpose - see D-016.",
   "transcription": {
@@ -38,6 +41,18 @@
     "device": "cpu",
     "note": "first run 202.5s - 360MB wav2vec2 checkpoint download, cached after. See D-015."
   },
-  "next_task": "T005 - quality.py (OpenCV Laplacian + exposure). Prompt: prompts/session-start/003-quality.md",
-  "last_updated": "2026-07-26T16:15:00Z"
+  "quality": {
+    "shots_scored": 117,
+    "wall_clock_s": 18.8,
+    "per_shot_s": 0.161,
+    "mean": 0.465,
+    "min": 0.061,
+    "median": 0.48,
+    "max": 0.857,
+    "stdev": 0.169,
+    "at_ceiling": 0,
+    "note": "sqrt-normalized Laplacian std, saturation 1000.0, weights 0.7/0.3. See D-017."
+  },
+  "next_task": "T004 - gemini.py (one native call per video, gemini-3.5-flash, media_resolution=low, fps 0.5). Needs GEMINI_API_KEY in .env.",
+  "last_updated": "2026-07-26T18:40:00Z"
 }
