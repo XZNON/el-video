@@ -5,8 +5,8 @@ Kept in sync by `/checkpoint`.
 
 | ID | Title | Status | Note |
 |---|---|---|---|
-| [T001](T001-probe.md) | `probe.py` — ffprobe wrapper | `not_started` | Root of the graph. Small; proves ffmpeg is really on PATH. |
-| [T002](T002-scenes.md) | `scenes.py` — shot detection | `not_started` | Frame-accurate `t_start`/`t_end`. Everything downstream indexes off these. |
+| [T001](T001-probe.md) | `probe.py` — ffprobe wrapper | `done` | Smoke-tested on `in.mp4`; matches D-003 numbers. |
+| [T002](T002-scenes.md) | `scenes.py` — shot detection | `done` | 117 shots on `in.mp4` in 25.3s, gapless, frame-accurate. See D-014. |
 | [T003](T003-transcribe.md) | `transcribe.py` — WhisperX | `not_started` | Word-level timing + `words_in_range()`. Slowest stage. |
 | [T004](T004-gemini-understanding.md) | `gemini.py` — native understanding | `not_started` | **Path B core.** Exactly one call per video. Has an open design question inside. |
 | [T005](T005-quality.md) | `quality.py` — OpenCV scoring | `not_started` | Laplacian + exposure. Deterministic, no LLM. Needs T002. |

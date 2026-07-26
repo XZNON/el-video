@@ -94,3 +94,63 @@ checked without the multi-GB torch install (D-008):
   session, and it unblocks T009 while stopping T006/T007 from compounding assumptions.
 - Then T001 + T002 (probe and shots — small and sequential):
   `prompts/session-start/001-probe-and-scenes.md`.
+
+---
+
+## 2026-07-25 — T001 + T002 · probe and shot detection
+
+**Task(s):** T001 — `probe.py` ffprobe wrapper; T002 — `scenes.py` shot detection
+**Status at end:** both `done` — every acceptance criterion met (one with a caveat, see D-014)
+
+### Done
+
+- `elvideo/index/probe.py` — full implementation. Existence check first (`FileNotFoundError`
+  with path), actionable "ffprobe not on PATH — install ffmpeg" when the binary is missing,
+  `ValueError` carrying path + stderr on non-zero exit / unparseable JSON. `num/den` fps parse
+  (`30000/1001` → 29.97). Pydantic `ValidationError` subclasses `ValueError`, so zero/absent
+  fields surface through the same declared exception.
+- `tests/test_probe.py` — 5 tests, subprocess mocked, no fixture video: fps parse, vertical
+  1080×1920 no-transposition, missing file, missing binary, non-zero exit, garbage output.
+- `elvideo/index/scenes.py` — full implementation. `ContentDetector(threshold=27.0)` per D-012,
+  exposed as module constants `DEFAULT_DETECTOR` / `DEFAULT_THRESHOLD` (the reproducibility
+  record Path A must match). `threshold` is a keyword arg with that default — the per-video knob,
+  signature still literally `detect_shots(path) -> list[Shot]`. Uses `.seconds` property (not
+  deprecated `get_seconds()`); `get_scene_list(start_in_scene=True)` guarantees one whole-video
+  shot when no cuts are found.
+- `tests/test_scenes.py` — 5 tests: missing file, settings-recorded guard, mocked 120-scene list
+  proving `shot_100`+ ids validate, real-video invariants on `in.mp4` (117 shots, gapless,
+  `t_start==0.0`, boundaries on exact frame multiples at 25 fps), and a real no-cut clip
+  generated via ffmpeg lavfi (skips if ffmpeg absent) returning exactly one shot.
+- Smoke-tested on the real A/B clip: probe returns `428.106304s / 25.0 fps / 1280×720`
+  (matches D-003); detection returns **117 shots in 25.3s** (D-012 said 20.8s — same order,
+  under the minute budget), `last_end=428.04`, `min_dur=0.64s`.
+- Gates: `pytest` **18 passed**, `ruff check .` clean, `mypy elvideo` strict clean.
+- `uv sync` — deps were already installed (progress.json `deps_installed: true`); the D-008
+  blocker was already cleared before this session.
+
+### Not done / deferred
+
+- Nothing from either task file. Rotation metadata (T001 notes) remains out of scope by design.
+
+### Decisions made
+
+- **D-014 (new)** — container duration ≠ video-stream duration on `in.mp4`: `probe().duration_s`
+  = 428.106 (format block, audio tail included) vs final shot `t_end` = 428.04 (10,701 frames ÷
+  25). Gap 0.066s > one frame. T002's "final t_end equals video duration within one frame" holds
+  against the *stream* duration only; T007 must tolerate ~0.1s container/stream skew when
+  validating coverage.
+- No new detector decisions — D-012's `ContentDetector(threshold=27.0)` adopted as specified,
+  now encoded in `scenes.py` constants and guarded by a test.
+
+### Blockers
+
+- **D-001 / D-002 still unresolved** — T010 (co-founder message) remains the highest-leverage
+  next step. T002's settings are now written down in code, which is exactly what D-002's
+  resolution needs to point at.
+- None for T003 — it can start immediately.
+
+### Next
+
+- **T003 — `transcribe.py`** (WhisperX word-level): `prompts/session-start/002-transcribe.md`.
+  Slowest stage; device + model settings must be recorded (D-002). T010 message to the
+  co-founder can happen in parallel — it's a message, not a session.

@@ -1,6 +1,6 @@
 # T001 — `probe.py`: ffprobe wrapper
 
-**Status:** `not_started`
+**Status:** `done`
 
 ## Goal
 

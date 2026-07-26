@@ -1,6 +1,6 @@
 # T002 — `scenes.py`: shot detection
 
-**Status:** `not_started`
+**Status:** `done`
 
 ## Goal
 

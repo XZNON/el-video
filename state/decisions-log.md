@@ -242,6 +242,27 @@ could equally live in the session log rather than the artifact.
 
 ---
 
+## D-014 — Container duration ≠ video-stream duration on the test clip
+
+**Status:** `resolved` (observation recorded) · **Date:** 2026-07-25 · **Affects:** T007 validation
+
+Measured while landing T001+T002 on `in.mp4`:
+
+- `probe().duration_s` = **428.106304** — ffprobe *format* (container) duration, which includes
+  the audio stream's tail.
+- `detect_shots()` final `t_end` = **428.04** — video stream length, 10,701 frames ÷ 25 fps.
+
+Gap: **0.066s**, more than one frame (0.04s at 25 fps). Both numbers are correct for what they
+measure; the audio track simply outlives the last video frame.
+
+**Consequence:** T002's "final `t_end` equals the video duration within one frame" criterion holds
+against the **video stream** duration and cannot hold against `video.duration_s` on this clip.
+T007's assembly/validation must not assert `shots[-1].t_end == video.duration_s` to frame
+precision — tolerance needs to cover container/stream skew (~0.1s), or compare against frame
+count × fps instead. `words[]` may also legitimately end after the last shot's `t_end`.
+
+---
+
 ## D-010 — Does `understand()` see the shot list? (open design question)
 
 **Status:** `unresolved` · **Owner:** whoever does T004 · **Affects:** T004, T007

@@ -1,14 +1,16 @@
 {
   "current_task": null,
-  "status": "scaffold_complete",
-  "completed_tasks": [],
-  "blockers": [],
+  "status": "task_complete",
+  "completed_tasks": ["T001", "T002"],
+  "blockers": [
+    "T010: D-001 (full-index vs top-N) and D-002 (shared vs vendored detect/transcribe settings) need co-founder confirmation before T006/T007 lock the schema"
+  ],
   "env": {
     "deps_installed": true,
     "python": "3.12",
     "torch": "2.8.0",
     "whisperx": "3.8.6",
-    "gates": "pytest 8 passed, ruff clean, mypy strict clean"
+    "gates": "pytest 18 passed, ruff clean, mypy strict clean"
   },
   "test_video": {
     "path": "in.mp4",
@@ -26,5 +28,5 @@
     "understand-sees-shot-list",
     "index-meta-records-detector"
   ],
-  "last_updated": "2026-07-25T13:39:30Z"
+  "last_updated": "2026-07-25T14:45:00Z"
 }
