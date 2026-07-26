@@ -1,6 +1,6 @@
 {
-  "current_task": null,
-  "status": "task_complete",
+  "current_task": "T011",
+  "status": "partial",
   "completed_tasks": [
     "T001",
     "T002",
@@ -21,7 +21,7 @@
     "python": "3.12",
     "torch": "2.8.0",
     "whisperx": "3.8.6",
-    "gates": "pytest 191 passed (-m 'not slow'), ruff clean, mypy strict clean (12 files). Slow marker: 4 total, not re-run this session (last run 2026-07-26: all 4 pass). The 36 new tests are tests/test_cli.py.",
+    "gates": "pytest 211 passed (-m 'not slow'), ruff clean, mypy strict clean (14 files). Slow marker: 4 total, not re-run this session. NOTE: the slow test asserts max-min > 0.3 on editorial_score; p3 produced 0.27 on one run and 0.48 on another, so that assertion is now a coin-flip on a live run. Left at 0.3 deliberately - loosening a guard on two samples would be tuning the test to the run. The 20 new tests are tests/test_alignment_eval.py (15) and the hint-drift block in tests/test_gemini.py (5).",
     "gemini_api_key_present": true,
     "gemini_api_key_usable": true
   },
@@ -36,7 +36,7 @@
     "note": "gitignored; both A/B paths hold the same file. See decisions-log D-003."
   },
   "open_decisions": [
-    "D-027 - Gemini's per-shot judgments attach to the wrong shot_index. Measured (2 match / 2 partial / 13 mismatch of 17 hand-checked shots on in.mp4), cause NOT diagnosed, fix deferred to T011. Open because the two hypotheses - Gemini's second-granular timestamps vs a 2.68s median shot, and ~1.8 sampled frames per shot at fps=0.5 - are both untested."
+    "D-027 - still open. Cause PARTLY attributed in T011: the model was counting shots rather than locating them by timestamp (hypothesis 1 supported - one prompt instruction moved agreement 2/17 -> 13/17). Hypothesis 2 (frame starvation at fps=0.5, ~1.8 sampled frames per shot) is STILL UNTESTED - fps was never raised. Closes when hypothesis 2 is measured or the fix is stable at >=12/17."
   ],
   "resolved_2026_07_26": {
     "D-001": "full index + is_candidate",
@@ -74,7 +74,7 @@
     "note": "sqrt-normalized Laplacian std, saturation 1000.0, weights 0.7/0.3. See D-017."
   },
   "gemini": {
-    "prompt_version": "p2",
+    "prompt_version": "p3",
     "model": "gemini-3.5-flash",
     "media_resolution": "low",
     "sample_fps": 0.5,
@@ -86,17 +86,29 @@
     "measured": {
       "clip": "in.mp4 (7:08, 117 shots)",
       "calls": 1,
-      "wall_clock_s": 96.8,
-      "upload_s": 24.6,
-      "call_s": 70.3,
-      "tokens_total": 38390,
-      "tokens_prompt": 27693,
-      "tokens_output": 10697,
-      "score_min": 0.5,
-      "score_median": 0.64,
-      "score_max": 0.88,
-      "score_distinct_2dp": 26,
-      "note": "Three p2 runs agreed within 2% on tokens. Score min varies run to run (0.10-0.50) - seed is best-effort, see D-024."
+      "runs": {
+        "p3_run1": {
+          "tokens_total": 42764,
+          "alignment_match_of_17": 13,
+          "score_range": 0.27,
+          "score_distinct_2dp": 27
+        },
+        "p4_run2": {
+          "tokens_total": 41402,
+          "alignment_match_of_17": 4,
+          "score_range": 0.6,
+          "score_distinct_2dp": 39,
+          "note": "reverted - restored scoring, collapsed alignment"
+        },
+        "p3_run3": {
+          "tokens_total": 42131,
+          "alignment_match_of_17": 6,
+          "score_range": 0.48,
+          "score_distinct_2dp": 30,
+          "note": "replicate of run1, identical config"
+        }
+      },
+      "note": "p3 costs ~+3K tokens over p2's 38,956 (+8%), far under the 250K/min TPM cap. Alignment varies 6-13 of 17 across identical runs - run-to-run variance is LARGER than most effects being measured, so 2-3 runs per configuration are required before comparing prompts. hint_drift() reports 0/117 on every run including the wrong ones: the model echoes our timestamps back and its self-report cannot detect misalignment. See D-027 update, D-028."
     },
     "note": "Settings pinned in D-019. Prompt iterated p1 -> p2 after the first live run clustered (11 distinct scores, all on the 0.05 grid, ceiling 0.75) - see D-024. Token cost is ~38K, not the spec's ~30K, because the estimate omitted audio tokens - see D-025."
   },
@@ -125,7 +137,12 @@
   },
   "cli": {
     "tests": 36,
-    "options": ["--work-dir", "--fps", "--media-resolution", "--threshold"],
+    "options": [
+      "--work-dir",
+      "--fps",
+      "--media-resolution",
+      "--threshold"
+    ],
     "exit_codes": "0 on a written+validated index; 1 on missing video / missing GEMINI_API_KEY / unwritable work dir / any pipeline or schema error; 2 from Typer on a bad option value.",
     "note": "Thin wrapper, build.py untouched. --threshold exposed and gemini.check_api_key() made public - both logged in D-026. Two output defects the first live run exposed are fixed: em dashes in log/exception messages rendered as '?' on cp1252, and lightning printed at INFO despite root=WARNING because it sets a level on its own logger."
   },
@@ -133,11 +150,27 @@
     "report": "docs/run-report.md",
     "measured": "2026-07-26, laptop: AMD Ryzen 7 5800H 8C/16T, 15.3GB RAM, Windows 11 Home 10.0.26200, cpu-only torch 2.8.0, Python 3.12.11, ffmpeg 8.1.1",
     "criteria": "8 pass / 2 fail / 1 not-verifiable",
-    "schema_validators_passed": ["validate_index()", "jsonschema draft 2020-12", "pydantic FootageIndex"],
+    "schema_validators_passed": [
+      "validate_index()",
+      "jsonschema draft 2020-12",
+      "pydantic FootageIndex"
+    ],
     "frame_accuracy": "0 of 234 boundary values off the 1/25s grid; shots contiguous; 10701 of 10701 frames covered",
     "spot_check": "17 shots hand-checked against their keyframes: 2 clean match, 2 partial, 13 mismatch. Keyframes re-extracted independently with ffmpeg for shots 025/059/105 and are identical to the pipeline's, so boundaries and keyframe sampling are ruled out. Transcript is unaffected (joined by time window, not index). See D-027.",
     "not_verifiable": "A/B against Path A - no counterparty exists (D-016)"
   },
-  "next_task": "T011 - caption/shot_index alignment. The repo's top defect and the only remaining task. Start with the repeatable measurement against the EXISTING work/footage_index.json, not with a change: 17 hand-checked shots prove the problem is real and cannot attribute a cause. Two untested hypotheses in D-027. Any fix stays inside ONE Gemini call (hard constraint 1). Budget live runs - each is ~39K tokens and ~4 min.",
-  "last_updated": "2026-07-26T17:05:00Z"
+  "next_task": "T011, continued. One flag left to pull: --fps 1.0 (~+14K tokens/run), the untested D-027 hypothesis 2. Budget 2-3 runs at each fps because run-to-run variance (6-13 of 17 on identical config) is larger than the effect being measured - a single run cannot rank two settings. Grade every run with python -m elvideo.eval.alignment; do not eyeball captions. Also open: alignment and scoring compete for the model's attention (p4 traded one for the other), so a real fix has to buy both.",
+  "last_updated": "2026-07-26T21:40:00Z",
+  "t011_closure_note": "T011 is PARTIAL, not done, by its own criterion 2: a smaller improvement 'does not close this task'. Delivered: a repeatable caption/frame agreement measurement (elvideo/eval/alignment.py, frozen 17-shot sample, one Gemini judge call, calibrated 16/17 against T009's human column) and prompt p3, which anchors on timestamps instead of letting the model count shots. Measured 2/17 baseline -> 13/17 (p3) -> 4/17 (p4, reverted) -> 6/17 (p3 replicate). Criteria 2 and 3 FAIL. Report: docs/run-report.md section T011.",
+  "alignment": {
+    "harness": "elvideo/eval/alignment.py",
+    "sample": "elvideo/eval/alignment_sample.json - the 17 shots T009 hand-checked, frozen",
+    "command": "python -m elvideo.eval.alignment work/footage_index.json",
+    "grader": "gemini-3.5-flash, rubric g1, temperature 0.0, one call for all 17 pairs, ~3K tokens",
+    "grader_calibration": "16 of 17 verdicts equal T009's human column on the p2 index",
+    "baseline_p2": "2 match / 1 partial / 14 mismatch of 17",
+    "best_p3": "13 match / 1 partial / 3 mismatch of 17 (run 1); 6 / 0 / 11 on replicate",
+    "never_matches": "shot_059 - wrong under p2, p3 and p4. p3 at least stopped inventing three passengers and dropped it off the top score (0.69).",
+    "note": "Grading never increments gemini.generate_call_count(); hard constraint 1 counts index calls only."
+  }
 }

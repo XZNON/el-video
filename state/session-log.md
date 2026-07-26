@@ -892,3 +892,115 @@ clean, 12 files.
   The repo's top defect and the only remaining task. Measure first against the **existing**
   `work/footage_index.json`; any fix stays inside **one** Gemini call; budget the live runs, each
   is ~39K tokens and ~4 minutes.
+
+
+---
+
+## 2026-07-26 — T011 · caption ↔ `shot_index` alignment: measured, improved, not closed
+
+**Task(s):** T011 — Gemini judgments attach to the wrong `shot_index`
+**Status at end:** **`partial`** — the defect is measurably smaller and the cause is partly
+attributed. **Criterion 2 (≥12/17) and criterion 3 (`shot_059`) fail.** T011 stays open by its own
+wording: "a smaller improvement is a legitimate result to record, but it does not close this task."
+
+### Done
+
+- **The measurement is now repeatable, which it was not before.** `elvideo/eval/alignment.py` +
+  `elvideo/eval/alignment_sample.json` + `elvideo/eval/__init__.py`. One Gemini call grades all 17
+  `(keyframe, caption)` pairs as match / partial / mismatch against a frozen sample; run it with
+  `python -m elvideo.eval.alignment work/footage_index.json`. T009's number was a human reading
+  frames and could not be reproduced, so nothing could be shown to improve against it.
+- **The grader was validated before being trusted.** On the untouched T009 index it returned
+  **2 match / 1 partial / 14 mismatch** and agreed with the human column on **16 of 17** without
+  being shown it. The single disagreement is `shot_116` (human *partial*, grader *mismatch*).
+- **Prompt `p2` → `p3`** in `elvideo/index/gemini.py`: locate each shot by its timestamp rather
+  than by counting cuts (stated with the mechanism — this detector cuts more finely than a person
+  would, so a counting model drifts out of step), hints now requested on the shot-list path too,
+  a self-check, and an honest-uncertainty escape.
+- **Three live runs, one Gemini call each, call count read from the counter every time:**
+
+  | Run | Prompt | Clean match /17 | Tokens | Score range |
+  |---|---|---:|---:|---:|
+  | baseline (T009 artifact) | `p2` | **2** | 38,956 | 0.75 |
+  | 1 | `p3` | **13** | 42,764 | 0.27 |
+  | 2 | `p4` | **4** | 41,402 | 0.60 |
+  | 3 | `p3` replicate | **6** | 42,131 | 0.48 |
+
+- **`hint_drift()` and `_check_hints()`** added to `gemini.py` — public detector plus a warning
+  above 25% drift. **`gemini.is_rate_limited()` promoted to public** so the eval module can build
+  its own retryer without routing through `_generate_with_backoff`, which would inflate the
+  one-call-per-video counter.
+- **`docs/run-report.md`** gained a full T011 section sitting directly beneath the T009 numbers:
+  method, the four-row results table, the negative result on hints, the `p4` trade-off, the
+  variance finding, the three named shots, and a 9-row criteria table with two FAILs and one
+  PARTIAL.
+- **Tests:** `tests/test_alignment_eval.py` (15 new) and a hint-drift block in
+  `tests/test_gemini.py` (5 new). Two `p2`-era tests were rewritten rather than deleted:
+  `test_hints_are_not_requested_when_boundaries_are_given` → `test_hints_are_requested_on_both_paths`,
+  carrying the reason the old judgment was wrong.
+- **Gates:** `uv run pytest -m "not slow"` **211 passed** · `uv run ruff check .` clean ·
+  `uv run mypy elvideo` strict clean (14 files).
+
+### Not done / deferred
+
+- **The task's headline criterion is not met and this is the main finding, not a footnote.**
+  `p3` scored 13/17 and then **6/17 on a replicate of the identical configuration** — same seed,
+  same temperature, same boundaries. The honest summary is **"2/17 → 6–13/17, n=2"**.
+- **D-027 hypothesis 2 — frame starvation — is still completely untested.** `fps` was never raised
+  from 0.5. That is the one lever with a plausible mechanism that has not been pulled, ~+14K
+  tokens per run, and it is the obvious next move.
+- **`shot_059` never matched its frame under any prompt.** It stopped inventing three passengers
+  (`p3`: "the presenter climbs into the boot") and dropped off the top score to 0.69, but the frame
+  is the presenter standing *outside* the boot. Criterion 3 fails on this shot alone.
+- **The hint detector does not detect the thing it was built for.** `hint_drift()` returns
+  **0 of 117** on every run, including the ones where two-thirds of sampled captions describe other
+  footage — the model echoes our own timestamps back regardless of where it looked. Kept as a
+  regression guard, not as the answer to criterion 6.
+- **The slow tests were not re-run** (4 total, last green 2026-07-26). One of them is now a
+  coin-flip: it asserts `max(scores) - min(scores) > 0.3`, and `p3` produced **0.27** on run 1 and
+  0.48 on run 3. Left at 0.3 deliberately — loosening a D-024 regression guard on two samples would
+  be tuning the test to the run. **Expect it to fail intermittently until someone measures it
+  properly.**
+- **Only 3 live index runs were spent**, the agreed budget, plus 4 cheap grading calls (~3K tokens
+  each). No 429 at any point.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-028 (new, `resolved`)** — `p3`: the prompt anchors on timestamps and hints are requested on
+  both paths. Supersedes the shot-list half of D-024. Records the `p4` experiment and why it was
+  reverted: it repaired the score spread (range 0.60, 39 distinct) and **collapsed alignment to
+  4/17** — the two instructions compete for the model's attention. Also carries the two small
+  API changes (`is_rate_limited`, `hint_drift` public).
+- **D-029 (new, `resolved`)** — caption/frame agreement is measured by a Gemini judge over a frozen
+  17-shot sample. Argues the grader-is-a-model objection explicitly (grading one still against one
+  sentence is the easy half of attributing a moment across 7 minutes) and rests the case on the
+  16/17 calibration rather than on the architecture. Records the sample's known weakness: it is
+  T009's **hand-picked** 17, kept because criterion 2 is written as "of 17" against a published
+  baseline, so comparability beat rule-generation.
+- **D-027 updated, deliberately left `open`** — cause *partly* attributed. Hypothesis 1 supported
+  (the model was counting, not locating); hypothesis 2 untested; and a new finding that closes off
+  the most promising detection route (self-report is not independent evidence). It closes when
+  hypothesis 2 is measured or the fix is stable at ≥12/17, not because the numbers moved.
+- **Shipped `p3` despite it not closing the task**, because both of its runs beat the baseline and
+  +8% tokens is trivial against the 250K TPM cap. Recorded as an improvement with a measured range,
+  never as a fix.
+- **Chose to spend the third live run replicating `p3` rather than trying a fourth prompt.** The
+  replicate is what turned a headline "13/17, criterion met" into the correct "6–13/17, criterion
+  failed" — the more useful outcome, and the reason the variance finding exists at all.
+- No conflict with `docs/IDEA.md` to log under the CLAUDE.md conflict rule.
+
+### Blockers
+
+- **None.** `blockers` is empty, the API key works, no 429 was seen across 7 calls.
+- `open_decisions` holds **D-027** only — open because hypothesis 2 is unmeasured, not because
+  anything waits on a human.
+- The D-016 owner follow-up (`.claude/CLAUDE.md` hard constraint 6 and `docs/IDEA.md` still
+  describe a Path A counterparty that does not exist) is still open and still blocks nothing.
+
+### Next
+
+- **T011, continued** — `prompts/session-start/009-fps-and-alignment-variance.md`. One flag left:
+  `--fps 1.0`, the untested D-027 hypothesis 2. **Budget 2–3 runs per setting, not one** — this
+  session proved a single run cannot rank two configurations on this measure. Grade every run with
+  `python -m elvideo.eval.alignment`; do not eyeball captions.

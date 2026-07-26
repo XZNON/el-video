@@ -232,3 +232,140 @@ index would confidently pick `shot_059` for "three adults in the back seat" and 
 an empty boot. Until [T011](../tasks/T011-caption-shot-alignment.md) lands, treat
 `caption` / `editorial_score` / `moment_reason` as *video-level* evidence that happens to be
 stored per shot — accurate about the footage, unreliable about which second of it.
+
+---
+
+# T011 — caption ↔ `shot_index` alignment (2026-07-26, same day)
+
+**Task:** [T011](../tasks/T011-caption-shot-alignment.md) · **Verdict: improved, criterion not
+met, cause partly attributed.** Read this section next to the T009 numbers above — it is the same
+clip, the same machine, and the same measurement, taken again.
+
+**Headline:** anchoring the prompt on timestamps instead of letting the model count shots moved
+clean caption/frame agreement from **2/17** to **13/17** on one run — and then **6/17** on a
+replicate of the identical configuration. The defect is real, the direction of the fix is
+evidenced, and **the result is not stable enough to call the task done**. `p3` ships as the new
+default because both of its runs beat the baseline; the ≥12/17 criterion does not pass.
+
+## How agreement is measured now
+
+T009's spot-check was a human reading 17 keyframes. That number could not be reproduced, so it
+could not be improved against. It is now a committed measurement:
+
+- **Sample:** `elvideo/eval/alignment_sample.json` — the same 17 shots T009 checked, frozen
+  verbatim so runs compare like with like. They span 0.0s–412.4s and the score range. Honest
+  caveat: they were **hand-picked in T009**, not rule-generated, which T011's criterion 1 mildly
+  disfavours; comparability with the published baseline was judged worth more.
+- **Grader:** one Gemini call, `gemini-3.5-flash`, rubric `g1`, `temperature=0.0`, all 17
+  `(keyframe, caption)` pairs interleaved in a **single** request — the measurement obeys the same
+  one-call rule as the thing it measures. Code: `elvideo/eval/alignment.py`.
+- **Calibration:** on the T009 index the grader returned **2 match / 1 partial / 14 mismatch** and
+  agreed with the human column on **16 of 17** — it reproduced the hand check without being shown
+  it. The single disagreement is `shot_116` (human *partial*, grader *mismatch*).
+- **Cost:** ~3K tokens per grading call. It never touches `gemini.generate_call_count()`, which
+  counts index calls only.
+
+Reproduce with `python -m elvideo.eval.alignment work/footage_index.json`.
+
+## Results
+
+Four indexes of the same clip, same boundaries, same `fps=0.5`, `media_resolution=low`, one Gemini
+call each. Only the prompt changed.
+
+| Index | Prompt | **Clean match /17** | Partial | Mismatch | Tokens | Score range | Distinct @2dp |
+|---|---|---:|---:|---:|---:|---:|---:|
+| T009 baseline | `p2` | **2** | 1 | 14 | 38,956 | 0.75 | 37 |
+| Run 1 | `p3` | **13** | 1 | 3 | 42,764 | 0.27 | 27 |
+| Run 2 | `p4` | **4** | 2 | 11 | 41,402 | 0.60 | 39 |
+| Run 3 | `p3` (replicate) | **6** | 0 | 11 | 42,131 | 0.48 | 30 |
+
+**Call count is 1 on every row, read from the counter.** Token cost rises ~3K over the 38,956
+baseline (+8%), from the longer prompt and the returned hints — far under the 250K/min TPM cap
+(D-025). `fps` was **not** raised, so no `fps` decision is owed.
+
+## What `p3` changes, and why it worked at all
+
+`p2` handed the model a numbered boundary list and asked for a `shot_index` back. `p3` adds three
+things and keeps the rubric identical:
+
+1. **"Find each shot by its timestamp, not by counting."** With the reason: this detector cuts far
+   more finely than a person would, so several listed shots can look like one continuous action —
+   a model counting cuts as it watches drifts out of step and files the right moments under the
+   wrong indices. That is precisely the D-027 signature.
+2. **Hints are now requested on the shot-list path too** (`t_start_hint` / `t_end_hint`), where
+   `p2` deliberately skipped them as redundant output tokens.
+3. **A self-check:** if the moment you describe for index *k* is not inside the *k*-th interval,
+   you have described the wrong moment — the list is authoritative, your reading of the clock bends.
+
+## The negative result: the hints do not detect the failure
+
+`hint_drift()` reports **0 of 117** judgments outside their own shot — on *every* run, including
+the 6/17 and 4/17 ones where a third to two-thirds of the sampled captions demonstrably describe
+other footage. **The model echoes the timestamps we gave it back verbatim, whatever it actually
+looked at.** Its self-report is not independent evidence and cannot be used as a detector.
+
+This is worth stating plainly because it was the most promising idea going in. `hint_drift()` is
+kept as a regression guard — it would catch a model that starts free-segmenting or drifting
+openly — but it is **not** the answer to T011's "detect a bad mapping rather than trust it". The
+only thing that detected the failure, before and after, is looking at the frames.
+
+## `p4`, and the trade-off it exposed
+
+`p3` aligned well on run 1 but flattened the scoring: range **0.27**, which fails the slow test's
+`max - min > 0.3` guard from D-024. `p4` = `p3` plus one paragraph re-asserting the ranking rubric.
+It restored the scores (range 0.60, 39 distinct — better than `p2`) and **collapsed the alignment
+to 4/17**. The two instructions compete: attention spent on localising is attention not spent on
+ranking, and vice versa. `p3`'s replicate then scored range 0.48 unaided, so `p3`'s flatness was
+itself partly run variance rather than a property of the prompt.
+
+## Run-to-run variance is the finding that limits all the others
+
+Identical prompt, identical settings, `seed=7`, `temperature=0.4`: **13/17 then 6/17.** D-024
+already recorded that `seed` is best-effort for scores; it is now measured for *alignment* too, and
+the swing is far larger. Consequences, stated so the next session does not repeat the mistake:
+
+- **A single run cannot rank two prompts.** `p3` vs `p4` on one run each (13 vs 4) is not evidence
+  that `p3` is three times better; the `p3` replicate lands closer to `p4` than to itself.
+- **The honest summary of `p3` is "2/17 → 6–13/17, n=2".** Both runs beat the baseline, which is
+  why it ships; the mean does not reach 12.
+- Any future comparison needs **2–3 runs per configuration**, ~42K tokens each.
+
+## The three named shots (criterion 3)
+
+| Shot | Frame shows | `p2` | `p3` run 1 | `p3` replicate |
+|---|---|---|---|---|
+| `shot_005` | Static front-on parked car, no presenter | mismatch | **match** | **match** |
+| `shot_059` | Presenter at the open boot, rear seats up, nobody in them | mismatch | mismatch | mismatch |
+| `shot_105` | Side profile of the parked car, no presenter | mismatch | **match** | mismatch |
+
+`shot_059` — the one that made D-027 alarming, the clip's top-scored shot captioned "three men in
+the back seat" — **never matches**. It no longer invents people: `p3` calls it "the presenter
+climbs into the boot to demonstrate the flat loading area" against a frame of the presenter
+standing outside the boot. Wrong action, right place, and no longer the top-scored shot (0.69).
+That is a smaller error than `p2`'s, and it is still a mismatch. Criterion 3 is **not met**.
+
+## Criteria
+
+| # | Criterion | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Repeatable measurement, sample committed | **PASS** | `elvideo/eval/alignment.py` + `alignment_sample.json`; grader agrees with the T009 human column 16/17 |
+| 2 | ≥ 12 of 17 clean matches | **FAIL** | 13/17 once, **6/17** on replicate. Both beat 2/17; neither is a stable ≥12 |
+| 3 | `shot_059` / `shot_105` / `shot_005` match or are absent for a stated reason | **FAIL** | `shot_005` matches on both `p3` runs; `shot_105` on one; **`shot_059` on neither** |
+| 4 | Still exactly one Gemini call, from the counter | **PASS** | 1 on all three runs; grading calls are a separate consumer and never increment it |
+| 5 | Token cost recorded against 38,956 | **PASS** | 42,764 / 41,402 / 42,131 — +8%, stated, far under the 250K TPM cap |
+| 6 | `understand()` detects a bad mapping rather than trusting it | **PARTIAL** | Range/duplicate/coverage checks already passed on the failing `p2` run, so index *validity* was never the failure — they are a regression guard, as the criterion anticipated. The new `hint_drift()` detector returns 0 drift on runs that are 65% wrong: **the model's self-report is not independent evidence** |
+| 7 | If `fps` is raised, justify it | **N/A** | `fps` stayed at 0.5. Frame starvation (D-027 hypothesis 2) is therefore **still untested** |
+| 8 | `pytest`, `ruff`, `mypy` clean | **PASS** | 211 fast tests, ruff clean, mypy strict clean (14 files) |
+| 9 | Result written up beside the T009 numbers | **PASS** | This section |
+
+## What this means for the A/B
+
+The T009 verdict stands, softened. `caption` / `editorial_score` / `moment_reason` are still more
+reliable about *the video* than about *which second of it*, but the gap narrowed measurably and the
+cause is no longer a mystery: **the model was not locating shots by timestamp, it was counting
+them.** Telling it not to helps, by a lot, inconsistently.
+
+An agent reasoning over a `p3` index is meaningfully less likely to cut to the wrong footage than
+over a `p2` one, and still cannot be trusted to pick the hero shot unattended. The remaining lever
+that has never been pulled is **`fps`** — hypothesis 2 in D-027, roughly +14K tokens to test, and
+the natural first move for whoever picks this up.

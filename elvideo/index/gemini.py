@@ -57,6 +57,8 @@ from elvideo.schema.models import MediaResolution, Shot, ShotUnderstanding
 __all__ = [
     "DEFAULT_MEDIA_RESOLUTION",
     "DEFAULT_SAMPLE_FPS",
+    "HINT_DRIFT_WARN_FRACTION",
+    "HINT_TOLERANCE_S",
     "MODEL",
     "PROMPT_VERSION",
     "RETRY_MAX_ATTEMPTS",
@@ -70,6 +72,8 @@ __all__ = [
     "UPLOAD_TIMEOUT_S",
     "check_api_key",
     "generate_call_count",
+    "hint_drift",
+    "is_rate_limited",
     "reset_call_count",
     "understand",
 ]
@@ -121,7 +125,19 @@ RETRY_WAIT_MULTIPLIER_S = 4.0
 RETRY_WAIT_MAX_S = 60.0
 """Backoff ceiling. Beyond a minute the free-tier per-minute window has reset anyway."""
 
-PROMPT_VERSION = "p2"
+HINT_TOLERANCE_S = 1.0
+"""Slack allowed between a reported hint and the shot it was filed against, per end.
+
+Gemini's timestamps are second-granular (hard constraint 4), so anything tighter would count
+rounding as drift. Anything looser would start absorbing the real thing: D-027's displacements are
+whole shots — ``shot_022``'s content filed 3 shots away, ``shot_048``'s 15 — which is far outside
+1s on a clip whose median shot is 2.68s."""
+
+HINT_DRIFT_WARN_FRACTION = 0.25
+"""Warn when more than this share of judgments describe a moment outside their own shot. Not zero:
+a handful of coarse hints on sub-second shots is expected and is not the failure D-027 names."""
+
+PROMPT_VERSION = "p3"
 """Bump on every prompt edit. The A/B writeup quotes the version that produced its numbers, and
 ``index_meta`` has no field for it — so this constant plus the log line is the record."""
 
@@ -192,6 +208,23 @@ boundaries are authoritative; they are what the final index is built on.
 Judge EXACTLY these shots. Do not merge them, do not split them, do not invent shots, do not skip \
 shots you find dull - a dull shot gets a low score, not an omission. Return exactly one object per \
 shot, {count} in total, in this order, with shot_index set to the index below.
+
+FIND EACH SHOT BY ITS TIMESTAMP, NOT BY COUNTING. Do not assume the k-th cut you notice is index \
+k. This detector cuts far more finely than a person would: several listed shots can be one \
+continuous-looking action, a slow pan can be split in two, and a shot can be under a second long. \
+If you count cuts as you watch, you will drift out of step with the list and describe the right \
+moments under the wrong indices. For every index, go to the start time listed for THAT index and \
+describe what is on screen between that time and its end time. Nothing else.
+
+Report where you actually looked. t_start_hint and t_end_hint are the timestamps of the moment \
+you just described, read off the video - not copied back from the list. Then check yourself: for \
+index k, the moment you describe must lie inside the k-th interval below. If it does not, you have \
+described the wrong moment. Return to the listed times for index k and describe what is there \
+instead. The list is authoritative; your reading of the clock is what bends.
+
+If a listed shot is too short or too dark to see properly, say so in the caption, score it low, \
+and still report its listed timestamps. A guess that borrows a neighbouring shot's content is \
+worse than an honest "brief, indistinct frame".
 
 index  start-end (seconds)
 {shot_lines}\
@@ -309,7 +342,9 @@ def understand(
         )
 
     client = genai.Client(api_key=_api_key())
-    schema: type[_Judgment] = _Judgment if shots is not None else _JudgmentWithHints
+    # Hints on BOTH paths since p3. They are the only evidence of where the model actually looked,
+    # and D-027 is the case where it looked in the wrong place with nothing erroring.
+    schema: type[_Judgment] = _JudgmentWithHints
     prompt = _build_prompt(shots)
 
     started = time.perf_counter()
@@ -347,7 +382,7 @@ def understand(
     finally:
         _delete_upload(client, uploaded)
 
-    understandings = _parse(response, shots, with_hints=shots is None)
+    understandings = _parse(response, shots, with_hints=True)
     _log_usage(response, understandings, upload_s, call_s, time.perf_counter() - started)
     return understandings
 
@@ -452,8 +487,14 @@ def _delete_upload(client: genai.Client, uploaded: types.File) -> None:
         )
 
 
-def _is_rate_limited(exc: BaseException) -> bool:
-    """True for HTTP 429 — the only status worth retrying on the free tier."""
+def is_rate_limited(exc: BaseException) -> bool:
+    """True for HTTP 429 — the only status worth retrying on the free tier.
+
+    Public so ``elvideo.eval.alignment`` can build its own retryer over the same predicate and the
+    same backoff constants without importing a private helper. The grading call is a separate
+    consumer of the same key and must not go through :func:`_generate_with_backoff`, which
+    increments the one-call-per-video counter.
+    """
     return isinstance(exc, genai_errors.APIError) and exc.code == 429
 
 
@@ -471,7 +512,7 @@ def _with_backoff(label: str, operation: Callable[[], _T]) -> _T:
         RuntimeError: If the rate limit survives :data:`RETRY_MAX_ATTEMPTS` attempts.
     """
     retryer = Retrying(
-        retry=retry_if_exception(_is_rate_limited),
+        retry=retry_if_exception(is_rate_limited),
         wait=wait_exponential(multiplier=RETRY_WAIT_MULTIPLIER_S, max=RETRY_WAIT_MAX_S),
         stop=stop_after_attempt(RETRY_MAX_ATTEMPTS),
         reraise=False,
@@ -570,6 +611,7 @@ def _parse(
 
     _check_indices(understandings, shots)
     understandings.sort(key=lambda u: u.shot_index)
+    _check_hints(understandings, shots)
     return understandings
 
 
@@ -630,6 +672,82 @@ def _check_indices(
             len(understandings),
             len(shots),
             missing,
+        )
+
+
+def hint_drift(
+    understandings: Sequence[ShotUnderstanding], shots: Sequence[Shot]
+) -> list[int]:
+    """Shot indices whose reported hint falls outside the boundary they were filed against.
+
+    The one signal that distinguishes *the model looked in the wrong place* from *the model looked
+    in the right place and described it badly* — the two are indistinguishable in a caption, which
+    is why D-027 survived every gate in the repo. Since ``p3`` the model reports, per shot, the
+    timestamps of the moment it just described; if that moment is not inside the interval the shot
+    was listed under, the judgment is filed against footage it did not watch.
+
+    Tolerant by design: Gemini's timestamps are second-granular (hard constraint 4) and the median
+    shot on the test clip is 2.68s, so a hint is counted as drifted only when its midpoint lands
+    outside the shot's interval widened by :data:`HINT_TOLERANCE_S` at each end. That keeps
+    rounding out of the number and leaves the +3 / -15 shot displacements D-027 measured firmly in.
+
+    Args:
+        understandings: Parsed judgments, hints populated (``p3`` and later).
+        shots: The boundaries those judgments were filed against.
+
+    Returns:
+        The drifted ``shot_index`` values, ascending. Empty when every judgment lands inside the
+        shot it claims — or when no hints were returned at all, which is why the caller logs the
+        denominator too.
+    """
+    drifted: list[int] = []
+    for u in understandings:
+        if u.t_start_hint is None or u.t_end_hint is None:
+            continue
+        if not 0 <= u.shot_index < len(shots):
+            continue
+        shot = shots[u.shot_index]
+        midpoint = (u.t_start_hint + u.t_end_hint) / 2
+        if not (
+            shot.t_start - HINT_TOLERANCE_S <= midpoint <= shot.t_end + HINT_TOLERANCE_S
+        ):
+            drifted.append(u.shot_index)
+    return sorted(drifted)
+
+
+def _check_hints(understandings: Sequence[ShotUnderstanding], shots: Sequence[Shot] | None) -> None:
+    """Log how far the model's own account of where it looked diverges from where we filed it.
+
+    A warning, not an exception. A drifted hint means the caption is untrustworthy, but the run
+    still produced a schema-valid index and the operator is better served by a number and a
+    recoverable artifact than by a crash — the alternative is a pipeline that fails a 4-minute run
+    on the last stage. :func:`hint_drift` is public so a caller that wants to be stricter can be.
+    """
+    if shots is None:
+        return
+    hinted = [u for u in understandings if u.t_start_hint is not None]
+    if not hinted:
+        logger.warning(
+            "gemini returned no timestamp hints - alignment cannot be checked (prompt %s)",
+            PROMPT_VERSION,
+        )
+        return
+
+    drifted = hint_drift(understandings, shots)
+    logger.info(
+        "gemini hint alignment: %d of %d judgments land inside the shot they were filed against "
+        "(tolerance +/-%.1fs)",
+        len(hinted) - len(drifted),
+        len(hinted),
+        HINT_TOLERANCE_S,
+    )
+    if drifted and len(drifted) > HINT_DRIFT_WARN_FRACTION * len(hinted):
+        logger.warning(
+            "%d of %d judgments describe a moment outside their own shot - captions are attached "
+            "to footage the model did not watch there (D-027). First few: %s",
+            len(drifted),
+            len(hinted),
+            drifted[:10],
         )
 
 

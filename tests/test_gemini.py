@@ -32,7 +32,7 @@ from elvideo.index.gemini import (
     reset_call_count,
     understand,
 )
-from elvideo.schema.models import Shot
+from elvideo.schema.models import Shot, ShotUnderstanding
 
 IN_MP4 = Path(__file__).resolve().parent.parent / "in.mp4"
 
@@ -303,8 +303,16 @@ def test_free_segmentation_path_still_works_and_keeps_hints(video: str) -> None:
     assert out[0].t_end_hint == 3.0
 
 
-def test_hints_are_not_requested_when_boundaries_are_given(video: str) -> None:
-    """Echoing 117 pairs of numbers we already know is output tokens for nothing."""
+def test_hints_are_requested_on_both_paths(video: str) -> None:
+    """Since ``p3``, hints are asked for even when we supplied the boundaries (T011).
+
+    ``p2`` skipped them on the shot-list path, reasoning that echoing 117 pairs of numbers we
+    already know is output tokens for nothing. D-027 is what that reasoning cost: the model filed
+    accurate captions under the wrong indices, and because it never said where it had looked,
+    **nothing in the pipeline could tell**. The hint is not a number we already know — it is the
+    model's own account of where it looked, and it is the only evidence that distinguishes a bad
+    caption from a misfiled one.
+    """
     client = _FakeClient()
     _run(client, video, shots=_shots(1))
     with_shots = client.calls[0]["config"].response_schema
@@ -313,11 +321,63 @@ def test_hints_are_not_requested_when_boundaries_are_given(video: str) -> None:
     _run(client2, video)
     without_shots = client2.calls[0]["config"].response_schema
 
-    assert with_shots is not without_shots
-    assert "t_start_hint" not in gemini._Judgment.model_fields
     assert "t_start_hint" in gemini._JudgmentWithHints.model_fields
-    assert with_shots == list[gemini._Judgment]
+    assert with_shots == list[gemini._JudgmentWithHints]
     assert without_shots == list[gemini._JudgmentWithHints]
+
+
+# --- hint alignment (T011) --------------------------------------------------------------------
+
+
+def _hinted(i: int, start: float, end: float) -> ShotUnderstanding:
+    return ShotUnderstanding(
+        shot_index=i,
+        caption=f"caption {i}",
+        editorial_score=0.5,
+        moment_reason=f"reason {i}",
+        tags=["a"],
+        t_start_hint=start,
+        t_end_hint=end,
+    )
+
+
+def test_hint_drift_is_empty_when_every_judgment_lands_in_its_own_shot() -> None:
+    shots = _shots(3)
+    hinted = [_hinted(i, s.t_start, s.t_end) for i, s in enumerate(shots)]
+    assert gemini.hint_drift(hinted, shots) == []
+
+
+def test_hint_drift_names_the_judgment_that_describes_another_shot() -> None:
+    """The D-027 signature: an accurate caption filed against footage it does not describe."""
+    shots = _shots(20)
+    hinted = [_hinted(i, s.t_start, s.t_end) for i, s in enumerate(shots)]
+    # shot_005's judgment describes what happens at shot_017 - the -15 displacement D-027 measured.
+    hinted[5] = _hinted(5, shots[17].t_start, shots[17].t_end)
+    assert gemini.hint_drift(hinted, shots) == [5]
+
+
+def test_second_granular_rounding_is_not_counted_as_drift() -> None:
+    """Gemini's timestamps are second-granular (hard constraint 4); tolerance keeps that out."""
+    shots = _shots(3)
+    hinted = [_hinted(i, s.t_start - 0.9, s.t_end - 0.9) for i, s in enumerate(shots) if i]
+    assert gemini.hint_drift(hinted, shots) == []
+
+
+def test_judgments_without_hints_are_skipped_not_counted_as_aligned() -> None:
+    """A model returning no hints is unmeasured, not verified. The caller logs the denominator."""
+    shots = _shots(2)
+    plain = ShotUnderstanding(
+        shot_index=0, caption="c", editorial_score=0.5, moment_reason="r", tags=["a"]
+    )
+    assert gemini.hint_drift([plain], shots) == []
+
+
+def test_drift_above_the_threshold_warns(caplog: pytest.LogCaptureFixture) -> None:
+    shots = _shots(4)
+    hinted = [_hinted(i, shots[3].t_start, shots[3].t_end) for i in range(4)]
+    with caplog.at_level(logging.WARNING):
+        gemini._check_hints(hinted, shots)
+    assert "describe a moment outside their own shot" in caplog.text
 
 
 # --- response handling ----------------------------------------------------------------------
@@ -567,7 +627,7 @@ def test_settings_are_recorded(video: str) -> None:
     assert gemini.SEED == 7
     assert gemini.THINKING_LEVEL == types.ThinkingLevel.LOW
     assert gemini.RETRY_MAX_ATTEMPTS == 5
-    assert PROMPT_VERSION == "p2"
+    assert PROMPT_VERSION == "p3"
 
 
 # --- real API, one call ----------------------------------------------------------------------

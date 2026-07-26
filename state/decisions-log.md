@@ -843,7 +843,7 @@ real mutable defaults everywhere else rather than suppressing the rule or scatte
 
 ## D-027 — Gemini's per-shot judgments are attached to the wrong `shot_index`
 
-**Status:** `open` — **measured, cause untested, fix deferred to T011** · **Date:** 2026-07-26 · **Found by:** T009 · **Affects:** T004, the A/B writeup
+**Status:** `open` — **measured; cause partly attributed in T011, hypothesis 2 untested** · **Date:** 2026-07-26 · **Found by:** T009 · **Affects:** T004, the A/B writeup · **See the Update at the end of this entry**
 
 T009's hand spot-check — the one acceptance criterion that requires a human to look at frames —
 found that **most captions do not describe the shot they are stored on.** 17 shots sampled across
@@ -904,3 +904,118 @@ hand-checked shots establish that the problem is real and are not enough to attr
 **Constraint that shapes any fix:** one Gemini call per video (hard constraint 1). Asking about
 each shot separately is the design this project exists to avoid and would blow the 10 RPM cap on a
 117-shot clip. Whatever fixes this stays inside a single call.
+
+**Update, 2026-07-26 (T011).** Cause **partly attributed**, entry stays `open`. Hypothesis 1 is
+supported and hypothesis 2 is still untested:
+
+- **The model was not locating shots by timestamp — it was counting them.** Adding one instruction
+  ("find each shot by its timestamp, not by counting; this detector cuts more finely than a person
+  would, so several listed shots can look like one continuous action") moved clean caption/frame
+  agreement from **2/17 to 13/17** on the first run. Nothing else changed: same boundaries, same
+  `fps=0.5`, same rubric, one call.
+- **It did not replicate.** The identical configuration scored **6/17** on a second run. `p3` is
+  therefore "2/17 → 6–13/17, n=2", not a fix.
+- **Run-to-run variance is larger than the effect being measured.** `seed=7` and `temperature=0.4`
+  do not stabilise alignment any more than they stabilise scores (D-024). A single run cannot rank
+  two prompts; 2–3 runs per configuration are needed, ~42K tokens each.
+- **The model's own timestamps cannot detect the failure.** `p3` requires `t_start_hint` /
+  `t_end_hint` on the shot-list path, and `hint_drift()` reports **0 of 117** drifted on every run
+  — including runs where two-thirds of the sampled captions describe other footage. The model
+  echoes the numbers we gave it back verbatim regardless of where it looked. This closes off the
+  most obvious detection idea: **self-report is not independent evidence.**
+- **Frame starvation (hypothesis 2) remains untested.** `fps` was never raised. That is the one
+  lever with a plausible mechanism that has not been pulled, ~+14K tokens to test.
+
+Full numbers: `docs/run-report.md` § *T011*. Ships as `p3` because both of its runs beat the
+baseline; T011's ≥12/17 criterion is recorded as **failed**.
+
+---
+
+## D-028 — `p3`: the prompt anchors on timestamps, and hints are requested on both paths
+
+**Status:** `resolved` — **shipped, improvement measured, not a cure** · **Date:** 2026-07-26 · **Task:** T011 · **Supersedes the shot-list half of D-024** · **Affects:** T004, D-010, the A/B writeup
+
+D-010 chose to pass PySceneDetect's boundaries as numbered text and take a `shot_index` back,
+reasoning that this "deletes the problem" of fuzzy temporal alignment. D-027 is the bill for that
+reasoning: an index lookup is only as good as the index the model puts in the field, and **nothing
+in the design ever asked the model to demonstrate it had looked where it claimed.**
+
+**What changed in the prompt (`p2` → `p3`):**
+
+1. **Locate by timestamp, do not count.** Stated with the mechanism, because the mechanism is the
+   persuasive part: this detector cuts far more finely than a person would — several listed shots
+   can be one continuous-looking action, and 36 of 117 shots here are under 2s — so a model
+   counting cuts as it watches drifts out of step with the list.
+2. **Hints on the shot-list path too**, reversing `p2`'s judgment that echoing numbers we already
+   know is output tokens for nothing. It is not a number we already know: it is the model's account
+   of where it looked.
+3. **A self-check**, telling the model to re-describe from the listed times if the moment it
+   described falls outside interval *k*.
+4. **An honest-uncertainty escape** — "brief, indistinct frame" and a low score beat borrowing a
+   neighbour's content.
+
+**Measured** (`in.mp4`, 117 shots, one call each, `fps=0.5`, grader `g1`): `p2` **2/17** →
+`p3` **13/17** → `p3` replicate **6/17**. Tokens 38,956 → ~42,100 (+8%), well under the 250K TPM
+cap. Call count 1 on every run, from the counter.
+
+**`p4` was tried and reverted.** It added one paragraph re-asserting the ranking rubric, to repair
+the score flattening seen on `p3`'s first run (range 0.27, which fails D-024's `>0.3` guard). It
+worked on scores (range 0.60, 39 distinct) and **collapsed alignment to 4/17**. The two
+instructions compete for the model's attention. `p3`'s replicate then produced range 0.48 unaided,
+so the flattening was substantially run variance rather than a property of `p3` — which is why the
+paragraph was removed rather than kept.
+
+**Kept despite not closing T011** because both `p3` runs beat the baseline and the token cost is
+trivial against the cap. Recorded as an improvement with a measured range, not as a fix.
+
+**Two smaller changes ride along:**
+
+- **`gemini.is_rate_limited()` is public.** `elvideo.eval.alignment` builds its own retryer over
+  the same predicate and constants; it must not route through `_generate_with_backoff`, which
+  increments the one-call-per-video counter.
+- **`hint_drift()` is public** and `_check_hints()` warns above 25% drift. It is a **regression
+  guard, not the detector T011 wanted** — see D-027's update for why the model's self-report is
+  worthless here.
+
+---
+
+## D-029 — Caption/frame agreement is measured by a Gemini judge over a frozen 17-shot sample
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Task:** T011 · **Affects:** T009's spot-check criterion, any future prompt work
+
+T009's spot-check was a human reading keyframes. It found the repo's worst defect and **could not
+be re-run**, so no fix could be shown to have worked. T011 needed a number that survives the
+session that produced it.
+
+**Decision: `elvideo/eval/alignment.py` — one Gemini call grades all 17 `(keyframe, caption)`
+pairs as match / partial / mismatch, against the frozen sample in `alignment_sample.json`.**
+
+**Why a model grader and not a human, given a model is what failed.** The two tasks are not the
+same task: the index call watches 7 minutes of video and must attribute a moment to one of 117
+intervals; the grader looks at one still beside one sentence and says whether they agree. The
+second is the easy half of the first. It was validated before being trusted — on the T009 index
+the grader returned 2 match / 1 partial / 14 mismatch and **agreed with the human column on 16 of
+17**, without being shown it. That calibration, not the architecture, is the argument.
+
+**Why the sample is the same 17 shots and not a rule-generated grid.** T011's criterion 1 asks for
+a fixed rule and mildly disfavours hand-picking; criterion 2 asks for ≥12 **of 17** against a
+published 2/2/13 baseline. Those pull opposite ways and comparability won: a rule-based sample
+would have required re-grading the old index to get a comparable denominator, and the T009 17 span
+the timeline and the score range anyway. **Recorded as the known weakness of this measurement**, in
+the sample file and in the report, rather than smoothed over.
+
+**Design points worth keeping:**
+
+- **One request for the whole sample**, frames interleaved after their own captions. The
+  measurement obeys the same one-call rule as the thing it measures.
+- **It never touches `generate_call_count()`.** Hard constraint 1 is enforced by that counter, and
+  a measurement that inflated it would break the criterion it exists to check.
+- **`temperature=0.0`**, unlike the index call's 0.4 (D-019): grading wants no spread.
+- **Frames are downscaled to 768px JPEG** before sending — 17 full-size PNGs are ~16 MB base64
+  against a 20 MB inline ceiling, and `MEDIA_RESOLUTION_LOW` renders them to a small tile anyway.
+- **A partial or padded response is refused, not tallied.** A ratio over an unknown denominator is
+  the exact kind of number this task exists to stop trusting.
+
+**Cost:** ~3K tokens per grading call, seconds of wall clock. Cheap enough that it should run on
+every future prompt change — and per D-027's update, **2–3 times per configuration**, because
+run-to-run variance on this measure is larger than most of the effects being chased.

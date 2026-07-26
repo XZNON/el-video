@@ -1,6 +1,10 @@
 # T011 — Gemini judgments attach to the wrong `shot_index`
 
-**Status:** `not_started`
+**Status:** `partial` — **stays open by its own criterion 2**
+
+A measured improvement (2/17 → 6–13/17) that does not reach ≥12/17 reliably. Criterion 2 says in
+as many words that a smaller improvement "does not close this task", so this is not `done`. What
+was delivered, and what is left, is in **Outcome** at the bottom.
 
 ## Goal
 
@@ -36,33 +40,33 @@ new field, that is a contract change and goes to `state/decisions-log.md` first 
 
 ## Acceptance criteria
 
-- [ ] A **repeatable measurement** of caption/frame agreement exists and is recorded: N shots
+- [x] A **repeatable measurement** of caption/frame agreement exists and is recorded: N shots
       sampled from `in.mp4` by a fixed rule (not hand-picked), each scored match / partial /
       mismatch against its keyframe, with the sample list committed so a later run compares like
       with like. The T009 baseline for this measure is **2 match / 2 partial / 13 mismatch of 17**.
-- [ ] Agreement after the fix is **≥ 12 of 17 clean matches** on that same sample — i.e. the
+- [ ] **FAILED.** Agreement after the fix is **≥ 12 of 17 clean matches** on that same sample — i.e. the
       failure is the exception, not the rule. A smaller improvement is a legitimate result to
       record, but it does not close this task.
-- [ ] The three shots named in `docs/run-report.md` as unambiguous failures — `shot_059`
+- [ ] **FAILED.** The three shots named in `docs/run-report.md` as unambiguous failures — `shot_059`
       (top-scored 0.85, captioned "three men in the back seat", frame shows an empty boot),
       `shot_105` (captioned "presenter exits", frame is a parked car with no presenter), and
       `shot_005` (captioned "walks around the front", frame is a static front-on car) — each either
       match their frames or are demonstrably absent from the fixed sample for a stated reason.
-- [ ] **Still exactly one Gemini call per video.** Verified from the counter, not intent. A fix
+- [x] **Still exactly one Gemini call per video.** Verified from the counter, not intent. A fix
       that costs two calls fails this criterion regardless of how well it aligns.
-- [ ] Token cost after the fix is recorded against the **38,956** baseline. A rise is acceptable if
+- [x] Token cost after the fix is recorded against the **38,956** baseline. A rise is acceptable if
       it is stated; the free-tier ceiling to stay under is the 250K/min TPM cap, not the old ~30K
       estimate (D-025).
-- [ ] `understand()` **detects** a bad mapping rather than trusting it: at minimum, every returned
+- [~] **PARTIAL.** `understand()` **detects** a bad mapping rather than trusting it: at minimum, every returned
       `shot_index` is in `[0, len(shots))`, appears at most once, and the response covers every
       shot — with a named exception raised on violation, not a silent pass. (Note whether the
       current run already satisfies this; if it does, index validity was never the failure and the
       check is a regression guard, not the fix.)
-- [ ] If `fps` is raised as part of the fix, the new default is justified with the measured
+- [x] *(n/a)* If `fps` is raised as part of the fix, the new default is justified with the measured
       agreement rate *and* the token cost at both values, and the change is logged as a decision —
       `fps` is a per-video knob and its default is a pinned setting (hard constraint 2, D-019).
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run mypy elvideo` all clean.
-- [ ] The result — including a failure to reach ≥12/17 — is written into `docs/run-report.md`
+- [x] `uv run pytest`, `uv run ruff check .`, `uv run mypy elvideo` all clean.
+- [x] The result — including a failure to reach ≥12/17 — is written into `docs/run-report.md`
       alongside the T009 numbers, so the two are readable side by side.
 
 ## Constraints that bite here
@@ -105,3 +109,46 @@ anchoring on something the model can actually see rather than on a number it has
 enough to establish that the problem is real and not enough to attribute a cause. The first unit of
 work here is the repeatable measurement in criterion 1, against the *existing* index — a fix
 without a baseline cannot be shown to have worked.
+
+---
+
+## Outcome — 2026-07-26 (session 008)
+
+**Delivered.** A repeatable measurement, a prompt fix that helps, and an honest ceiling on how
+much it helps. Full numbers in `docs/run-report.md` § *T011*; decisions in D-027 (update), D-028,
+D-029.
+
+| | |
+|---|---|
+| Baseline (`p2`, T009 index) | **2** match / 1 partial / 14 mismatch of 17 |
+| `p3` run 1 | **13** match / 1 / 3 |
+| `p4` run 2 | **4** match / 2 / 11 — reverted |
+| `p3` replicate, run 3 | **6** match / 0 / 11 |
+| Gemini calls per index | **1** on every run, from the counter |
+| Tokens | 42,764 / 41,402 / 42,131 vs the 38,956 baseline (+8%) |
+| Gates | 211 fast tests, `ruff` clean, `mypy` strict clean (14 files) |
+
+**What was learned, in order of how much it should shape the next attempt:**
+
+1. **The model was counting shots, not locating them.** One instruction telling it to find each
+   shot by its timestamp — with the reason, that this detector cuts more finely than a person
+   would — is worth 4–11 points of agreement on a 17-shot sample. That is the cause D-027 asked
+   for, and it is hypothesis 1.
+2. **Run-to-run variance is larger than the effect.** 13/17 and 6/17 from identical inputs,
+   `seed=7`. Any future prompt comparison needs 2–3 runs per configuration or it is measuring
+   noise. This is why criterion 2 is failed rather than squeaked past on the 13.
+3. **The model's own timestamps cannot police it.** `p3` asks for `t_start_hint` / `t_end_hint`
+   and `hint_drift()` reports 0 of 117 drifted on every run, including the ones two-thirds wrong.
+   It echoes our numbers back. Self-report is not evidence — the detector T011 wanted does not
+   exist along this route.
+4. **Alignment and scoring compete.** `p4` restored the score spread and halved the alignment.
+   Whatever closes this task has to buy both, not trade them.
+
+**Left undone, and it is the obvious next move:** `fps` was never raised, so **D-027 hypothesis 2
+(frame starvation — ~214 sampled frames for 117 shots at `fps=0.5`, and 36 shots under 2s) is
+still untested.** It costs roughly +14K tokens per run and is one flag. Given finding 2, budget
+**2–3 runs at `fps=1.0`**, not one, and grade each with
+`python -m elvideo.eval.alignment work/footage_index.json`.
+
+`shot_059` is the shot to watch: it has never matched its frame under any prompt, though `p3` at
+least stopped inventing three passengers and dropped it out of the top score.

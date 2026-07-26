@@ -15,11 +15,11 @@ Kept in sync by `/checkpoint`.
 | [T008](T008-cli.md) | `cli.py` — entrypoint | `done` | Thin wrapper, 36 tests, both Typer traps guarded. `--threshold` exposed and `check_api_key()` preflighted (**D-026**). Fixed two output defects the live run exposed: em dashes on cp1252, and lightning logging past root=WARNING. |
 | [T009](T009-e2e-validation.md) | E2E validation | `done` | **8 pass, 2 fail, 1 not-verifiable** — [`docs/run-report.md`](../docs/run-report.md). Passes: 1 call, 234.7s, 117 frame-accurate shots, 1436 words, 3 validators clean, 37 distinct scores. Fails: **38,956 tokens** vs the spec's 30K (target was wrong — D-025), and the **hand spot-check, 13 of 17 captions on the wrong shot** (**D-027** → T011). Not verifiable: the Path A A/B (D-016). |
 | [T010](T010-schema-sync-checkpoint.md) | Schema-sync checkpoint | `done` | Solo repo (D-016) — resolved as a self-lock. D-001/D-002/D-013 all closed. |
-| [T011](T011-caption-shot-alignment.md) | Caption ↔ `shot_index` alignment | `not_started` | **Next, and the repo's top defect.** Gemini's judgments land on the wrong shots — 2 match / 2 partial / 13 mismatch of 17 hand-checked. Boundaries, keyframes and transcripts ruled out; not a constant offset. Measure first, then fix, still **one call** (**D-027**). |
+| [T011](T011-caption-shot-alignment.md) | Caption ↔ `shot_index` alignment | `partial` | **Improved, not closed.** `p3` anchors the prompt on timestamps instead of letting the model count shots: **2/17 → 13/17**, then **6/17** on a replicate of the same config. Cause partly attributed (the model was counting, not locating); run-to-run variance exceeds the effect. Criterion 2 (≥12/17) and criterion 3 (`shot_059`) **fail**. Measurement is now repeatable — `elvideo/eval/alignment.py` (**D-028**, **D-029**). Left: **`fps=1.0`, 2–3 runs** — D-027 hypothesis 2 is still untested. |
 
 ## Suggested order
 
-Remaining: **T011**, and that is the whole list. T001–T010 are all `done`.
+Remaining: **T011**, still, and that is the whole list. T001–T010 are all `done`.
 
 **Nothing is blocked.** D-021 (the dead API key) was resolved on 2026-07-26, and the pipeline has
 run end to end for real.
@@ -30,10 +30,17 @@ free-tier key with no 429 — and then its hand spot-check found that **the capt
 attached to the wrong shots** (D-027). Nothing automated caught it, because every gate in the repo
 is a shape check and a misfiled caption has the right shape.
 
-T011 is therefore the only thing worth doing next. It starts with a **repeatable measurement**
-against the existing index, not a change: 17 hand-checked shots prove the problem is real and are
-not enough to attribute a cause. Budget the live runs before starting — each is ~39K tokens and
-~4 minutes, and D-024's prompt work took three.
+**Session 008 measured it and moved it, and did not close it.** The measurement is now repeatable
+(`python -m elvideo.eval.alignment work/footage_index.json`, frozen 17-shot sample, Gemini judge
+that reproduced the human column 16/17). Prompt `p3` took clean agreement from **2/17 to 13/17** —
+and the identical configuration then scored **6/17**, so the honest result is "2/17 → 6–13/17,
+n=2". `p3` ships because both runs beat the baseline; ≥12/17 does not hold.
+
+**The next move is one flag.** D-027's hypothesis 2 — frame starvation at `fps=0.5`, ~1.8 sampled
+frames per shot — has never been tested. Raise `--fps` to 1.0, ~+14K tokens per run, and because
+run-to-run variance is larger than most effects here, **budget 2–3 runs at each setting, not one**.
+Grade every run rather than eyeballing captions: the whole point of session 008's harness is that
+the number survives the session that produced it.
 
 ## Statuses
 
