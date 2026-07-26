@@ -502,3 +502,120 @@ fixed name would.
 
 **T007 consequence:** `build.py` must pass `shot_id=shot.id`, or the keyframes on disk stop
 matching the ids in `footage_index.json` and the folder becomes unusable for debugging.
+
+---
+
+## D-019 — Gemini call settings and the prompt version
+
+**Status:** `resolved` for this repo · **Date:** 2026-07-26 · **Feeds:** T004 · **Unverified against the live API — see D-021**
+
+`docs/IDEA.md` § *Gemini call settings (locked)* fixes the model, `media_resolution`, `fps`,
+structured output, and backoff. It says nothing about the sampling parameters, which change the
+output just as much. Pinned as module constants in `elvideo/index/gemini.py`, guarded by
+`tests/test_gemini.py::test_settings_are_recorded`, in the same house style as D-012 / D-015 / D-017:
+
+| Constant | Value | Why |
+|---|---|---|
+| `MODEL` | `gemini-3.5-flash` | From the spec. Not parameterized. |
+| `DEFAULT_MEDIA_RESOLUTION` | `low` | 66 tok/frame, not 258. From the spec. |
+| `DEFAULT_SAMPLE_FPS` | 0.5 | From the spec. Per-video knob, overridable per call. |
+| `TEMPERATURE` | **0.4** | New. See below. |
+| `SEED` | **7** | New. Removes run-to-run jitter as an A/B variable. Best-effort — the API does not promise identical output across model revisions. |
+| `THINKING_LEVEL` | **LOW** | New. See below. |
+| `RETRY_MAX_ATTEMPTS` / wait | **5** / 4s → 60s | Bounded. Free tier is 10 RPM, so a single video that keeps tripping the cap is a key problem, not a timing problem. |
+| `UPLOAD_TIMEOUT_S` | 300 | Server-side File API processing, not the transfer. |
+| `PROMPT_VERSION` | **`p1`** | See below. |
+
+**Why temperature 0.4 and not 0.0.** The task's own failure mode — "a model that scores everything
+0.8 is a prompt bug" — is exactly what near-greedy decoding encourages: it collapses toward a few
+round numbers. But 1.0 makes the understanding stage non-repeatable, and the A/B needs to be able
+to re-run it. 0.4 is the compromise, and it is falsifiable rather than a matter of taste: every run
+logs the score spread and warns below stdev 0.05, and the slow test fails if the range collapses.
+
+**Why thinking level LOW.** Per-shot judgment against an explicit rubric, not a reasoning puzzle.
+High thinking spends the free-tier budget on tokens that never reach the index and adds minutes to
+a <5 min wall-clock target. `thoughts_token_count` is logged separately so this is re-litigable
+with a number.
+
+**Why a `PROMPT_VERSION` constant.** The prompt is the part of this module that gets iterated on,
+and `index_meta` has no field for it (adding one is a contract change — D-013's cost applies). The
+constant plus the per-call log line is the record, and the A/B writeup quotes it.
+
+**Prompt shape.** Two constants: `SYSTEM_INSTRUCTION` carries the rubric — five scoring bands
+(0.85+ hero … below 0.15 unusable), scores calibrated *within this video*, an explicit instruction
+that a run of identical scores is a failure of the task, `moment_reason` as the evidence for the
+score in ≤15 words and never a restatement of the caption, and a reminder to use the audio (this
+stage is the only one that sees picture and sound together). The user half is either the numbered
+boundary list (D-010) or the free-segmentation instruction.
+
+**Response schema is not `ShotUnderstanding`.** Two wire models, `_Judgment` and
+`_JudgmentWithHints`, converted after validation. `ShotUnderstanding` has optional hint fields —
+nullable branches in a generated schema — and forbids extras, which is a constraint on our side of
+the wire, not the model's. Splitting them also lets the hints be **dropped from the schema entirely
+when boundaries are supplied**: echoing 117 pairs of numbers we already know is output tokens spent
+on nothing.
+
+---
+
+## D-020 — 429 backoff wraps the File API upload too, not only `generate_content`
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Scope:** local · **Feeds:** T004
+
+T004's criterion says "exponential backoff on HTTP 429", and the natural reading is the
+`generate_content` call — that is the request the rate limit is about.
+
+**Found by running it:** with a key whose quota is gone, the 429 arrives at
+`client.files.upload()`, before any generation happens. Unwrapped, that surfaces as a raw
+`google.genai.errors.ClientError` traceback out of the SDK — no retry, and none of the actionable
+text the unset-key path gets.
+
+**Decision:** both API-touching steps go through one `_with_backoff()` helper. The upload is
+genuinely retryable (a transient per-minute cap clears), and the failure message now names which
+step failed and quotes the server's own text.
+
+**Not counted as a call.** `generate_call_count()` still counts `generate_content` requests only —
+it is the instrument behind the *one call per video* rule, and folding uploads into it would make
+that number mean nothing. A 429 retry of the generate call *does* increment it, deliberately:
+hidden retries would defeat the instrument.
+
+---
+
+## D-021 — The `GEMINI_API_KEY` has no quota; T004 is code-complete but unverified
+
+**Status:** `open` — **needs the owner** · **Date:** 2026-07-26 · **Blocks:** T004 sign-off, T009
+
+Every request on the key in `.env` returns:
+
+```
+429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted.
+Please go to AI Studio at https://ai.studio/projects to manage your project and billing.'}}
+```
+
+**Isolated, not assumed:** a 5-token text-only `generate_content` on `gemini-3.5-flash` fails the
+same way, so it is not the video, not the file size, not the request shape, and not a transient
+per-minute cap. Retrying cannot fix it — the message is about credits, not rate. An earlier run
+with a *stale* key failed differently (`400 API_KEY_INVALID`), which confirms the key in `.env` is
+now being read and accepted; it is the project behind it that has nothing left.
+
+**What this repo assumed:** `docs/IDEA.md` says "free tier, zero credits" throughout. This key's
+project is on **prepay billing**, which is a different quota pool — a prepay project with a zero
+balance does not fall back to the free tier.
+
+**Owner action:** create an API key in an AI Studio project **without billing enabled** (the free
+tier), put it in `.env`, and run:
+
+```
+uv run pytest tests/test_gemini.py -m slow --log-cli-level=INFO
+```
+
+That single command settles every unverified criterion in T004 and produces the token number the
+~30K target is supposed to be checked against.
+
+**What is unverified until then** (all four are marked `[~]` in the task file, not ticked):
+real token usage; whether `editorial_score` actually spreads under prompt `p1`; whether
+`moment_reason` reads as evidence rather than a second caption; and whether the free-segmentation
+(`shots=None`) path behaves against the real model. The instrumentation for all of them is in
+place and asserted against mocks — what is missing is one call.
+
+**Deliberately not worked around.** Switching model, provider, or tier would break the pinned
+`gemini-3.5-flash` constraint and make the A/B measure something else.

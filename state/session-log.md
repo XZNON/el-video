@@ -380,3 +380,131 @@ below 0.3 or distinct 2-dp values drop under 20, so the check survives the sessi
   plumbing is not.
 - Then T007 (orchestrator — must pass `shot_id=shot.id` per D-018 and populate `index_meta`'s
   detector fields per D-013), T008, T009.
+
+---
+
+## 2026-07-26 — T004 · Gemini native understanding (the Path B core)
+
+**Task(s):** T004 — `gemini.py`, one native call per video
+**Status at end:** **`blocked`** — code complete, all gates green, but **no live API call was ever
+made**: the key in `.env` has no quota. Four acceptance criteria are unverifiable without one real
+call and are marked `[~]` in the task file rather than ticked. See D-021.
+
+### Done
+
+**`elvideo/index/gemini.py`, full implementation.**
+
+- `understand(path, fps=0.5, media_resolution="low", *, shots=None)` — the positional signature
+  `docs/IDEA.md` § *Module layout* fixes, extended with the D-010 boundaries kwarg exactly the way
+  D-012 and D-018 extended theirs.
+- **One `generate_content` per invocation, instrumented not intended.** `generate_call_count()` /
+  `reset_call_count()`; `test_exactly_one_call_regardless_of_shot_count` pushes 117 shots through a
+  mocked client and asserts one request. Logged as
+  `gemini generate_content request #1 model=… fps=… media_resolution=… prompt=p1`. A 429 retry
+  increments the counter **on purpose** — a hidden retry would defeat the instrument.
+- **Request payload asserted, not the signature.** The fake client captures `model`, `contents`,
+  and `config`, so the tests check that `media_resolution` arrives as
+  `MediaResolution.MEDIA_RESOLUTION_LOW` on the config and that `fps` arrives on
+  `Part.video_metadata.fps` of the video part. `"medium"` and `fps=2.0` are tested as per-call
+  overrides that leave the module defaults untouched.
+- **Structured output** via `response_mime_type="application/json"` + `response_schema`. There is
+  no fence-stripping anywhere in the parser: a fenced or prose body raises. Two wire models rather
+  than reusing `ShotUnderstanding` — see D-019 — which also lets the hint fields be dropped from
+  the schema entirely when boundaries are supplied.
+- **D-010 wired end to end.** Boundaries render as `idx t_start-t_end` lines; the prompt says do not
+  merge, split, invent, or skip. Out-of-range **and** duplicate `shot_index` both raise loudly; a
+  short list only warns, because a missing caption is visible and recoverable while a misnumbered
+  one is neither. Output sorted by `shot_index`. The `shots=None` fallback still works and keeps
+  `t_start_hint` / `t_end_hint`.
+- **Prompt as module constants with `PROMPT_VERSION = "p1"`** — five scoring bands, scores
+  calibrated *within this video*, an explicit statement that a run of identical scores is a failure
+  of the task, `moment_reason` as evidence in ≤15 words that never restates the caption, and a
+  reminder to use the audio.
+- **Backoff** via `tenacity`: 5 attempts, 4s doubling to a 60s ceiling, 429 only. Non-429 errors are
+  not retried. Final failure is a `RuntimeError` naming the step and quoting the server's text.
+- **File API lifecycle:** upload, poll while `PROCESSING` with a 300s deadline, refuse anything that
+  is not `ACTIVE`, and delete the handle in a `finally` so the failure path cleans up too. A failed
+  delete warns instead of masking the real result.
+- **Observability for T009:** token usage (`prompt`/`output`/`thoughts`/`total`), upload and call
+  timings separately, and the `editorial_score` distribution
+  (`min/median/max/stdev/distinct@2dp`) with a **warning below stdev 0.05** — the "everything is
+  0.8" failure the task names, caught automatically rather than by eye.
+
+**`tests/test_gemini.py` — 47 fast tests + 1 slow.** Guards (missing file, unset key, blank key,
+bad fps, unknown resolution, empty shot list); the one-call rule; every payload field; both prompt
+paths; six response-failure paths; 429 retried-then-succeeded, persistent-429, non-429-not-retried,
+and 429-at-upload; the full File API lifecycle including the timeout and the failed delete; and the
+three log lines T009 reads.
+
+**Gates:** `uv run pytest -m "not slow"` **101 passed** (was 54); `ruff check .` clean; `mypy elvideo`
+strict clean, 12 files. The slow marker now holds 3 tests: 2 pass, and the new real-API one **fails**
+— see below.
+
+### Not done / deferred
+
+- **The live run never happened.** `tests/test_gemini.py::test_real_video_one_call_spread_scores`
+  fails on the shortest decisive line:
+
+  ```
+  google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message':
+  'Your prepayment credits are depleted. ...'}}
+  ```
+
+  So these stay unverified, all four marked `[~]` in the task file: real token usage against the
+  ~30K target; whether `editorial_score` actually spreads under prompt `p1`; whether
+  `moment_reason` reads as evidence rather than a second caption; and the `shots=None` path against
+  the real model. The instrumentation and the assertions for all four are written and passing
+  against mocks — what is missing is one call.
+- **No workaround attempted.** Switching model, provider, or tier would break the pinned
+  `gemini-3.5-flash` constraint and make the A/B measure something else.
+- **Prompt not iterated.** `p1` is the first version and has never seen a model response. The
+  `PROMPT_VERSION` constant exists precisely because that is expected to change.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-019 (new)** — Gemini call settings and the prompt version. The spec locks model /
+  `media_resolution` / `fps` / structured output / backoff but is silent on sampling, which changes
+  the output just as much. Pinned as constants and guarded by a test: `TEMPERATURE=0.4`, `SEED=7`,
+  `THINKING_LEVEL=LOW`, `RETRY_MAX_ATTEMPTS=5`, `PROMPT_VERSION="p1"`. **Why 0.4 rather than 0.0:**
+  near-greedy decoding is what *produces* the "everything is 0.8" clustering the task calls a
+  prompt bug, while 1.0 makes the stage non-repeatable. The choice is falsifiable rather than
+  taste — the spread is logged every run and asserted in the slow test. Also records why the
+  response schema is two private wire models instead of `ShotUnderstanding`.
+- **D-020 (new)** — the 429 backoff wraps the **File API upload** as well as `generate_content`.
+  Found by running it: with a dead key the 429 arrives at upload time, before any generation, and
+  unwrapped that surfaced as a raw SDK traceback with none of the actionable text. Uploads are
+  deliberately **not** counted by `generate_call_count()` — that counter is the instrument behind
+  the one-call rule and folding uploads into it would make the number meaningless.
+- **D-021 (new, open — needs the owner)** — the key has no quota. Isolated rather than assumed: a
+  5-token text-only call on `gemini-3.5-flash` fails identically, so it is not the video, the file
+  size, the request shape, or a transient per-minute cap. An earlier attempt with a stale key failed
+  differently (`400 API_KEY_INVALID`), which confirms the `.env` key is now read and accepted — it
+  is the project behind it that is empty. `docs/IDEA.md` assumes free tier throughout; this key's
+  project is on **prepay billing**, a different quota pool that does not fall back to the free tier.
+- No conflict with `docs/IDEA.md` to log under the CLAUDE.md conflict rule.
+
+### Blockers
+
+- **D-021 — the API key.** `progress.json.blockers` is non-empty again for the first time since
+  T003. **What would unblock it:** an API key from an AI Studio project with **billing not enabled**
+  (that is the free tier) in `.env`, then
+  `uv run pytest tests/test_gemini.py -m slow --log-cli-level=INFO`. That one command settles every
+  `[~]` criterion in T004 and produces the token number the ~30K target is checked against.
+- **T009 is blocked by the same thing** — an end-to-end run with no Gemini call proves nothing about
+  the Path B claim.
+- **T007 is not blocked.** `understand()`'s signature and output are settled, so `build.py` can be
+  written and tested against a mocked understanding pass.
+- The D-016 owner follow-up (CLAUDE.md hard constraint 6) is still open and still blocks nothing.
+
+### Next
+
+- **T006 then T007**, both in `prompts/session-start/005-build-orchestrator.md`. **T006 first** —
+  `validate_index()` is the last stub in `elvideo/schema/` and T007 cannot meet its
+  "validates before it is written" criterion without it. Caught after the first draft of the prompt
+  put T007 first and T006 in a footnote.
+- **T007 — `build.py`**, the orchestrator.
+  Alignment is an index lookup on `shot_index` (D-010), must pass `shot_id=shot.id` to
+  `score_shot()` (D-018), must populate `index_meta.scene_detector` / `.scene_threshold` from the
+  values actually passed to `detect_shots()` (D-013), and must log **per-stage** timing.
+- In parallel, whenever the owner has a free-tier key: rerun the T004 slow test and close D-021.

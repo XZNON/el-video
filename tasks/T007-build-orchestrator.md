@@ -1,6 +1,8 @@
 # T007 — `build.py`: orchestrator
 
-**Status:** `not_started`
+**Status:** `not_started` — next up. **Not blocked by D-021**: `understand()`'s signature and output
+are settled, so `build.py` is written and tested against a mocked understanding pass. Only the
+"<5 min on a real 10-min video" criterion needs a live Gemini call.
 
 ## Goal
 
