@@ -1,8 +1,8 @@
 # T007 — `build.py`: orchestrator
 
-**Status:** `partial` (2026-07-26) — implemented, 33 tests, every criterion met **except** the
-<5 min wall-clock one, which cannot be settled while D-021 is open: the run it needs is the one
-with a live Gemini call in it. Everything else ran for real on `in.mp4`.
+**Status:** `done` (2026-07-26) — implemented, 33 tests, every criterion met. The last one, the
+<5 min wall-clock, was closed by the first live CLI run once T008 landed: **234.7s end to end on
+`in.mp4` with a real Gemini call**, 78% of the 300s budget.
 
 ## Goal
 
@@ -66,13 +66,14 @@ Also owns `align_understanding(shots, understanding) -> list[Shot]`.
 - [x] **Per-stage timing logged** — one line per stage plus a total. All eight stages log their
       own line; the summary line repeats the breakdown alongside the total.
 - [x] `embedding` is `null` on every shot.
-- [~] Full run on a 10-min video completes in **<5 min wall-clock**. **Measured 158.5s on
-      `in.mp4` (7:08, 117 shots) with the Gemini stage mocked (D-021)** — probe 0.06s, shots
-      31.7s, transcript 102.8s, understand **0.00s (mocked)**, quality 23.9s, join 0.01s,
-      validate 0.08s, write 0.02s. That is 53% of the 300s budget with the one stage that
-      matters missing, so ~141s of headroom is left for the upload plus the single
-      `generate_content` call. **Not ticked**: the number is a floor, not the criterion. Rerun
-      once D-021 clears.
+- [x] Full run on a 10-min video completes in **<5 min wall-clock**. **Measured live 2026-07-26
+      via `python -m elvideo index in.mp4`: 234.7s** on `in.mp4` (7:08, 117 shots) — probe 0.05s,
+      shots 21.0s, transcript 107.8s, **understand 86.8s (real call: upload 18.7s + call 64.9s,
+      38,956 tokens)**, quality 19.0s, join 0.01s, validate 0.06s, write 0.02s. 78% of the 300s
+      budget. The earlier 158.5s mocked figure was a floor and is superseded.
+      **Caveat worth carrying into the writeup:** `in.mp4` is 7:08, not 10:00. Transcription and
+      quality scale with duration, so a true 10-min clip projects to roughly 300-330s — at or
+      just over the budget. The criterion says "a 10-min video"; what was measured is a 7-min one.
 
 ## Measured on `in.mp4` (2026-07-26, Gemini mocked)
 

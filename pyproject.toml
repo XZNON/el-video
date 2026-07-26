@@ -34,6 +34,13 @@ extend-exclude = [".agents", "work"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# typer.Option/Argument in a default IS the Typer API — the object is the parameter spec, not a
+# shared mutable default. B008 already ignores them when the parameter is annotated with a known
+# immutable type (str, float), so it fires only on the enum-annotated ones, which is arbitrary.
+# Listing them keeps B008 live for real mutable defaults elsewhere.
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.mypy]
 # 3.12, not the 3.11 floor: numpy 2.5's bundled stubs use PEP 695 `type` statements, which mypy
 # refuses to parse below 3.12 — a hard failure, not suppressible per-module. Runtime support for

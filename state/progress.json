@@ -1,15 +1,25 @@
 {
-  "current_task": "T007",
-  "status": "partial",
-  "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T010"],
+  "current_task": null,
+  "status": "task_complete",
+  "completed_tasks": [
+    "T001",
+    "T002",
+    "T003",
+    "T004",
+    "T005",
+    "T006",
+    "T007",
+    "T008",
+    "T010"
+  ],
   "blockers": [],
-  "cleared_2026_07_26": "D-021 resolved - owner supplied a free-tier key and the live run passed. T004 is done. T007's <5 min criterion and T009 are both runnable for real now; neither has been run end-to-end with the live Gemini stage yet.",
+  "cleared_2026_07_26": "D-021 resolved - owner supplied a free-tier key and the live run passed. T004 is done. T007 closed the same day: the first live CLI run measured 234.7s end to end with a real Gemini call, so the <5 min criterion is no longer a projection.",
   "env": {
     "deps_installed": true,
     "python": "3.12",
     "torch": "2.8.0",
     "whisperx": "3.8.6",
-    "gates": "pytest 155 passed (-m 'not slow'), ruff clean, mypy strict clean (12 files). Slow marker: 4 total, all 4 pass - the gemini real-API test now runs for real (~2 min, ~38K tokens per run).",
+    "gates": "pytest 191 passed (-m 'not slow'), ruff clean, mypy strict clean (12 files). Slow marker: 4 total, not re-run this session (last run 2026-07-26: all 4 pass). The 36 new tests are tests/test_cli.py.",
     "gemini_api_key_present": true,
     "gemini_api_key_usable": true
   },
@@ -87,25 +97,34 @@
     "note": "Settings pinned in D-019. Prompt iterated p1 -> p2 after the first live run clustered (11 distinct scores, all on the 0.05 grid, ceiling 0.75) - see D-024. Token cost is ~38K, not the spec's ~30K, because the estimate omitted audio tokens - see D-025."
   },
   "build": {
-    "wall_clock_s": 158.5,
+    "wall_clock_s": 234.7,
     "stages_s": {
-      "probe": 0.06,
-      "shots": 31.68,
-      "transcript": 102.75,
-      "understand": 0.0,
-      "quality": 23.85,
+      "probe": 0.05,
+      "shots": 20.95,
+      "transcript": 107.76,
+      "understand": 86.77,
+      "quality": 19.04,
       "join": 0.01,
-      "validate": 0.08,
+      "validate": 0.06,
       "write": 0.02
     },
     "shots": 117,
     "words": 1436,
-    "silent_shots": 7,
-    "output_kb": 177,
+    "candidates": 43,
     "candidate_threshold": 0.65,
-    "gemini_mocked": true,
-    "note": "understand=0.00s because the stage was MOCKED (D-021, now cleared) - the artifact's captions read '[MOCKED] ...'. 158.5s is 53% of the 300s budget with the one stage that matters missing. The real understand stage measures 96.8s standalone, so a live end-to-end run projects to ~230-255s, inside the 300s budget but not by much. NOT yet measured for real - that is T007's last open criterion."
+    "gemini_mocked": false,
+    "command": "python -m elvideo index in.mp4",
+    "measured": "2026-07-26, live Gemini call, laptop (Windows 11, cpu-only torch 2.8.0)",
+    "tokens_total": 38956,
+    "gemini_calls": 1,
+    "note": "T007's <5 min criterion, closed for real. 234.7s is 78% of the 300s budget. CAVEAT: in.mp4 is 7:08, not 10:00 - transcript and quality scale with duration, so a true 10-min clip projects to roughly 300-330s, at or just over the budget. Supersedes the earlier 158.5s mocked figure, which had understand=0.00s."
   },
-  "next_task": "T008 - cli.py, a thin wrapper over build_index(). `python -m elvideo index in.mp4` is a DoD criterion and the two Typer bugs found at bootstrap are already recorded in tasks/T008-cli.md. T007's last criterion (<5 min end-to-end with the real understanding stage) is now RUNNABLE - the key works - and closing it is one live run, cheapest done from the CLI once T008 lands. Then T009.",
-  "last_updated": "2026-07-27T00:40:00Z"
+  "cli": {
+    "tests": 36,
+    "options": ["--work-dir", "--fps", "--media-resolution", "--threshold"],
+    "exit_codes": "0 on a written+validated index; 1 on missing video / missing GEMINI_API_KEY / unwritable work dir / any pipeline or schema error; 2 from Typer on a bad option value.",
+    "note": "Thin wrapper, build.py untouched. --threshold exposed and gemini.check_api_key() made public - both logged in D-026. Two output defects the first live run exposed are fixed: em dashes in log/exception messages rendered as '?' on cp1252, and lightning printed at INFO despite root=WARNING because it sets a level on its own logger."
+  },
+  "next_task": "T009 - E2E validation on in.mp4. Most of its evidence already exists from this session's live run (234.7s, 117 shots, 1 call, 38,956 tokens, 43 candidates, validates clean). What is left is the written run report in a tracked file, the 5-shot hand spot-check, and recording the machine. Assert tokens against ~40K, not the spec's 30K (D-025).",
+  "last_updated": "2026-07-26T14:35:00Z"
 }

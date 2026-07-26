@@ -93,7 +93,7 @@ def _has_audio(path: str) -> bool:
             check=False,
         )
     except FileNotFoundError as exc:
-        raise FileNotFoundError("ffprobe not on PATH — install ffmpeg") from exc
+        raise FileNotFoundError("ffprobe not on PATH - install ffmpeg") from exc
 
     return result.returncode == 0 and bool(result.stdout.strip())
 
@@ -134,7 +134,7 @@ def transcribe(
         raise FileNotFoundError(f"video not found: {path}")
 
     if not _has_audio(path):
-        logger.info("transcribe: %s has no audio track — returning 0 words", path)
+        logger.info("transcribe: %s has no audio track - returning 0 words", path)
         return []
 
     import whisperx

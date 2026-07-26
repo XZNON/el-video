@@ -73,7 +73,7 @@ def probe(path: str) -> VideoMeta:
             check=False,
         )
     except FileNotFoundError as exc:
-        raise FileNotFoundError("ffprobe not on PATH — install ffmpeg") from exc
+        raise FileNotFoundError("ffprobe not on PATH - install ffmpeg") from exc
 
     if result.returncode != 0:
         raise ValueError(f"ffprobe failed on {path}: {result.stderr.strip()}")

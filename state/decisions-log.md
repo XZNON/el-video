@@ -799,3 +799,42 @@ D-001 was argued on.
 **Not recorded in the artifact.** `index_meta` has no field for it, and adding one is a contract
 change with D-013's cost. The constant plus this entry is the record. Revisit if the A/B writeup
 needs two indexes at different thresholds to be told apart from the file alone.
+
+---
+
+## D-026 — The CLI exposes `--threshold`, and preflights the API key before the slow stages
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Feeds:** T008 · **Scope:** local (no schema change)
+
+Three small calls made while implementing `elvideo/cli.py`, none of them in T008's acceptance
+criteria, all of them visible to a user.
+
+**1. `--threshold` is exposed, though the task file does not list it.** D-012 calls the
+`ContentDetector` threshold a **per-video** knob in the same breath as `fps`, and `build_index`
+already takes it keyword-only. A per-video knob reachable only from Python is not a per-video knob
+— the person who needs it is the person running the CLI on a clip that over- or under-cuts. The
+value used is already recorded in `index_meta.scene_threshold` (D-013), so an index built with
+`--threshold 20` says so. **Cost:** one more option to keep in step with `scenes.DEFAULT_THRESHOLD`.
+
+**2. `gemini.check_api_key()` is now public, and the CLI calls it before `build_index`.** The
+understanding stage is *fourth*: probe, shots and WhisperX run first and cost ~2.5 minutes on
+`in.mp4`. Without a preflight, a missing `GEMINI_API_KEY` produces the right exit code and the
+right message **two and a half minutes late**. The function is a four-line wrapper over the
+existing private `_api_key()`; the real read still happens inside `understand()`, so there is one
+source of the message and no way for the two to disagree. `work_dir` and `work_dir/keyframes` are
+created up front for the same reason — an unwritable `--work-dir` should fail at second zero, not
+after the whole pipeline has run.
+
+**3. Per-stage timing is rendered by attaching a `RichHandler`, not by re-timing anything.**
+`build_index` already logs one line per stage plus a total. The alternative — returning a timings
+dict — changes `build.py`'s signature to serve the CLI's output format, which is backwards: the
+orchestrator has to stay callable without inheriting our presentation. Root logger stays at
+WARNING and only `elvideo` is raised to INFO, because torch, whisperx and google-genai are all
+chatty at INFO and would bury the eight lines that matter.
+
+**Tooling note, same session:** `[tool.ruff.lint.flake8-bugbear] extend-immutable-calls =
+["typer.Argument", "typer.Option"]` added to `pyproject.toml`. B008 ("no function call in an
+argument default") already ignored `typer.Option` on `str`- and `float`-annotated parameters but
+fired on the enum-annotated `--media-resolution`, which is an arbitrary line: in Typer the call
+*is* the parameter spec, not a shared mutable default. Listing the two calls keeps B008 live for
+real mutable defaults everywhere else rather than suppressing the rule or scattering `# noqa`.

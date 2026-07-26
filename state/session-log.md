@@ -715,3 +715,85 @@ clean, 12 files.
 - **T008 — `cli.py`**: `prompts/session-start/006-cli.md`. Needs no key.
 - Then **one live CLI run closes T007's last criterion and feeds T009 at once** — same ~38K tokens,
   two results.
+
+---
+
+## 2026-07-26 — T008 · `cli.py`, and the live run that closed T007
+
+**Task(s):** T008 — `cli.py`, the entrypoint (and T007's last open criterion, closed as a side effect)
+**Status at end:** T008 **`done`**. T007 **`done`**. `completed_tasks` is now everything except T009.
+
+### Done
+
+- **`elvideo/cli.py` implemented** — the last stub in the repo is gone. Options: `--work-dir`,
+  `--fps`, `--media-resolution`, `--threshold`. `.env` loaded via `python-dotenv`, per-stage timing
+  rendered through a `RichHandler`, exit 1 on every failure path, exit 2 from Typer on a bad option
+  value. `build.py` was **not** touched — the module is argument parsing plus two fail-fast guards.
+- **`tests/test_cli.py` — 36 tests**, `build_index` mocked in all of them. Covers the argument
+  surface, the exit-code map, work-dir creation, stderr routing, the log filtering, and both
+  bootstrap traps (the Typer single-command collapse and the cp1252 help strings).
+- **The live end-to-end run passed, first attempt, no code changes:**
+  `python -m elvideo index in.mp4` → `work/footage_index.json`, **234.7s**, 117 shots, 1436 words,
+  43 candidates, **one** `generate_content` call, **38,956 tokens**, exit 0. Per stage: probe 0.05s,
+  shots 20.95s, transcript 107.76s, understand 86.77s (upload 18.7s + call 64.9s), quality 19.04s,
+  join 0.01s, validate 0.06s, write 0.02s. `editorial_score` min 0.10 / median 0.61 / max 0.85,
+  37 distinct at 2dp.
+- **T007's `<5 min` criterion is therefore closed** — 234.7s, 78% of the 300s budget, measured
+  rather than projected. The artifact on disk is now a **real** index: 0 `[MOCKED]` captions,
+  `validate_index()` clean, `index_meta` reads `scene_threshold: 27.0`, `sample_fps: 0.5`.
+- **Two output defects the live run exposed, both fixed:**
+  1. **Em dashes in messages that reach the terminal** rendered as `?` on the cp1252 console — the
+     same trap as the help strings, one layer down, and invisible until a CLI existed to print
+     them. Five messages in `gemini.py`, one in `probe.py`, one in `transcribe.py` are now ASCII.
+     Docstrings deliberately untouched: nothing prints them.
+  2. **`lightning` printed at INFO despite the root logger being at WARNING**, because it sets a
+     level on its own logger at import. Fixed with a filter on the rich handler; third-party
+     `WARNING` and above still gets through.
+- Gates: `uv run pytest -m "not slow"` **191 passed**, `uv run ruff check .` clean,
+  `uv run mypy elvideo` strict clean (12 files).
+
+### Not done / deferred
+
+- **The `<5 min` number is measured on a 7:08 clip, not a 10:00 one.** Transcription and quality
+  scale with duration, so a true 10-minute video projects to roughly **300–330s — at or just over
+  the budget**. T007 is ticked because `in.mp4` is the agreed test video (D-003), but the headroom
+  is thinner than "234.7 < 300" suggests, and the A/B writeup should say so rather than quote the
+  raw number. Recorded in `tasks/T007-build-orchestrator.md` next to the tick.
+- **The slow tests were not re-run this session** (last green 2026-07-26, 4/4). The live CLI run
+  covers the same ground for the gemini path and costs the same quota, so re-running them would
+  have spent ~38K tokens for a second copy of an answer already in hand.
+- `--verbose` / `--quiet`, a JSON output mode, and a progress bar: none are in the criteria, each
+  is a reason for the module to grow. Left out on purpose.
+- The ffmpeg/h264 `mmco: unref short failure` chatter still reaches the terminal. Native code
+  writes it to the process's stderr, below Python's logging — not fixable from `cli.py`.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-026 (new)** — three CLI choices that were not in the acceptance criteria:
+  (1) **`--threshold` is exposed**, because D-012 calls the detector threshold a per-video knob in
+  the same breath as `fps` and a knob nobody can reach is not a knob;
+  (2) **`gemini.check_api_key()` is now public** and the CLI preflights it, so a missing key fails
+  in 0.1s instead of after the ~2.5-minute transcription stage — a four-line wrapper over the
+  existing private `_api_key()`, so there is still one source of the message;
+  (3) **per-stage timing is rendered by attaching a handler**, not by changing `build_index` to
+  return a timings dict — the orchestrator stays callable without inheriting our presentation.
+  The entry also records the `pyproject.toml` tooling change:
+  `[tool.ruff.lint.flake8-bugbear] extend-immutable-calls = ["typer.Argument", "typer.Option"]`,
+  because B008 already ignored `typer.Option` on `str`/`float` parameters and fired only on the
+  enum-annotated one.
+- No conflict with `docs/IDEA.md` to log under the CLAUDE.md conflict rule.
+
+### Blockers
+
+- **None.** `blockers` and `open_decisions` are both empty.
+- The D-016 owner follow-up (CLAUDE.md hard constraint 6 describing a Path A counterparty that does
+  not exist) is still open and still blocks nothing.
+
+### Next
+
+- **T009 — E2E validation**: `prompts/session-start/007-e2e-validation.md`. Most of its evidence
+  already exists from this session's live run; what is missing is the **run report in a tracked
+  file** (`work/` is gitignored), the **five-shot hand spot-check**, and the machine recorded.
+  Token assertions go against **~40K, not the spec's 30K** (D-025) — and that miss is itself one of
+  T009's findings.

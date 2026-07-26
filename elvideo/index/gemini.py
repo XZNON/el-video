@@ -68,6 +68,7 @@ __all__ = [
     "THINKING_LEVEL",
     "UPLOAD_POLL_INTERVAL_S",
     "UPLOAD_TIMEOUT_S",
+    "check_api_key",
     "generate_call_count",
     "reset_call_count",
     "understand",
@@ -351,6 +352,21 @@ def understand(
     return understandings
 
 
+def check_api_key() -> None:
+    """Fail now if ``GEMINI_API_KEY`` is missing, instead of after the transcription stage.
+
+    The understanding stage is fourth in ``build_index``: probe, shots and WhisperX run first and
+    cost ~2.5 minutes on the test clip. Without this the CLI would spend all of it before
+    discovering there is no key to call with — the same exit code, two and a half minutes later.
+    Public only so ``elvideo.cli`` can preflight it; the real read still happens in
+    :func:`understand`.
+
+    Raises:
+        RuntimeError: If it is unset or empty. The message names the fix.
+    """
+    _api_key()
+
+
 def _api_key() -> str:
     """Read ``GEMINI_API_KEY`` from the environment or ``.env``.
 
@@ -466,7 +482,7 @@ def _with_backoff(label: str, operation: Callable[[], _T]) -> _T:
         detail = exc.last_attempt.exception()
         raise RuntimeError(
             f"Gemini returned HTTP 429 on all {RETRY_MAX_ATTEMPTS} attempts of {label}. The free "
-            f"tier is 10 RPM / 250K TPM — wait a minute and rerun, or check nothing else is using "
+            f"tier is 10 RPM / 250K TPM - wait a minute and rerun, or check nothing else is using "
             f"this key. If the message below mentions depleted credits, the key's project is not "
             f"on the free tier and no amount of waiting will help: {detail}"
         ) from exc
@@ -537,7 +553,7 @@ def _parse(
             f"judgments. First 200 chars: {text[:200]!r}"
         )
     if not payload:
-        raise RuntimeError("Gemini returned an empty shot list — no judgment to merge into shots.")
+        raise RuntimeError("Gemini returned an empty shot list - no judgment to merge into shots.")
 
     understandings: list[ShotUnderstanding] = []
     for i, raw in enumerate(payload):
@@ -610,7 +626,7 @@ def _check_indices(
     missing = len(shots) - len(understandings)
     if missing > 0:
         logger.warning(
-            "gemini judged %d of %d shots — %d shot(s) will have no caption",
+            "gemini judged %d of %d shots - %d shot(s) will have no caption",
             len(understandings),
             len(shots),
             missing,
@@ -657,7 +673,9 @@ def _log_usage(
     distinct = len({round(s, 2) for s in scores})
     stdev = statistics.pstdev(scores) if len(scores) > 1 else 0.0
     logger.info(
-        "gemini understanding: %d shots in %.1fs (upload %.1fs, call %.1fs) — "
+        # ASCII only: these messages reach a cp1252 console through the CLI's rich handler,
+        # where an em dash renders as a replacement glyph. Same trap as the help strings.
+        "gemini understanding: %d shots in %.1fs (upload %.1fs, call %.1fs) | "
         "editorial_score min=%.2f median=%.2f max=%.2f stdev=%.3f distinct@2dp=%d/%d",
         len(understandings),
         total_s,
@@ -672,7 +690,7 @@ def _log_usage(
     )
     if stdev < 0.05:
         logger.warning(
-            "editorial_score barely varies (stdev %.3f, %d distinct values) — that is a prompt "
+            "editorial_score barely varies (stdev %.3f, %d distinct values) - that is a prompt "
             "bug, not a verdict on the footage. See PROMPT_VERSION %s.",
             stdev,
             distinct,
