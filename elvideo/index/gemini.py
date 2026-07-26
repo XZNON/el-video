@@ -120,7 +120,7 @@ RETRY_WAIT_MULTIPLIER_S = 4.0
 RETRY_WAIT_MAX_S = 60.0
 """Backoff ceiling. Beyond a minute the free-tier per-minute window has reset anyway."""
 
-PROMPT_VERSION = "p1"
+PROMPT_VERSION = "p2"
 """Bump on every prompt edit. The A/B writeup quotes the version that produced its numbers, and
 ``index_meta`` has no field for it — so this constant plus the log line is the record."""
 
@@ -151,14 +151,30 @@ close on. Rare - expect a handful in a video, sometimes none.
 or a talking head saying nothing quotable.
   0.00-0.14  unusable. Transition frames, whip pans, severe blur, subject cut off, dead air.
 
-Calibrate across the whole video before you commit to numbers. Use the full range and give real \
-decimals - two shots should rarely share the same score to two places. A run of identical scores \
-means you stopped judging, and is a failure of this task. Redundancy is a legitimate reason to \
-score one of two similar shots lower: say so.
+Rank before you score. Watch the whole video, pick out the few shots you would actually build \
+the edit around and the few you would never use, and let those anchor the top and bottom of your \
+range. Then place everything else between them. Scoring shot by shot in isolation is what \
+produces a video where every shot is a 0.6, and a video where every shot is a 0.6 is a video you \
+have not judged.
 
-moment_reason — the EVIDENCE for that score, not a restatement of the caption. Name the thing that \
-earned or lost the points: framing, an action peak, what is said, redundancy with an earlier shot, \
-a technical fault. At most 15 words. Never re-describe what is in the shot.
+Concretely, and these are requirements, not style notes:
+  - The best shots in this video belong in the 0.85-1.00 band. Whatever the strongest moment \
+here is, it IS the strongest moment here - do not withhold the top band because the footage is \
+ordinary. The same goes downward: dead frames, black screens and whip pans belong below 0.15.
+  - Use two decimals, and use the digits. 0.58 and 0.63 are different judgments; 0.60 for both is \
+a refusal to choose. Do not round everything to multiples of 0.05.
+  - No score should be shared by more than about ten shots. If a third of your scores land within \
+0.1 of each other you have stopped judging and started labelling - go back and separate them.
+  - Redundancy is a legitimate reason to score one of two similar shots lower. Say which one it \
+is redundant with.
+
+moment_reason — the EVIDENCE for that score, not a restatement of the caption. Name the specific \
+thing that earned or lost the points: the framing, the action peak, the line that is said, the \
+shot it repeats, the technical fault. At most 15 words.
+
+A category label is not evidence. "Standard b-roll", "connective tissue", "establishing shot" say \
+nothing a reader could disagree with - if you use words like those, say what makes this one so. \
+"Third exterior pan of the same car" is evidence. "Standard exterior b-roll" is not.
 
 tags — 2 to 5 lowercase tags, single words or hyphenated: subject, setting, shot type. \
 e.g. "food", "indoor", "close-up", "hands", "wide".

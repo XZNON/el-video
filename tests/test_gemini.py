@@ -567,7 +567,7 @@ def test_settings_are_recorded(video: str) -> None:
     assert gemini.SEED == 7
     assert gemini.THINKING_LEVEL == types.ThinkingLevel.LOW
     assert gemini.RETRY_MAX_ATTEMPTS == 5
-    assert PROMPT_VERSION == "p1"
+    assert PROMPT_VERSION == "p2"
 
 
 # --- real API, one call ----------------------------------------------------------------------
@@ -607,5 +607,21 @@ def test_real_video_one_call_spread_scores(monkeypatch: pytest.MonkeyPatch) -> N
     assert all(u.moment_reason.strip() for u in out)
 
     scores = [u.editorial_score for u in out]
+    distinct = len({round(s, 2) for s in scores})
+    on_grid = sum(1 for s in scores if round(s * 100) % 5 == 0)
+
+    # Thresholds set from the measured p1 → p2 iteration (D-024), so a regression to p1's
+    # behaviour fails here rather than passing quietly: p1 scored 11 distinct values, every one
+    # of them on the 0.05 grid, and never used the hero band. p2 scored 37, 32/117 on the grid,
+    # and reached 0.85.
+    #
+    # Range stays at 0.3 deliberately. Two p2 runs of the same clip bottomed out at 0.10 and 0.50
+    # — whether the model scores the outro frames as unusable is genuinely variable, and `seed` is
+    # best-effort (D-019). Granularity is the assertion that actually detects clustering; range
+    # only catches the degenerate case.
     assert max(scores) - min(scores) > 0.3, f"scores did not spread: {sorted(set(scores))}"
-    assert len({round(s, 2) for s in scores}) >= 8, "scores cluster — prompt bug"
+    assert distinct >= 15, f"scores cluster — prompt bug ({distinct} distinct values at 2dp)"
+    assert on_grid < 0.9 * len(scores), (
+        f"{on_grid}/{len(scores)} scores land on the 0.05 grid — the model is picking from a "
+        f"handful of round numbers instead of judging"
+    )

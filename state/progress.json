@@ -1,19 +1,17 @@
 {
-  "current_task": "T004",
-  "status": "blocked",
-  "completed_tasks": ["T001", "T002", "T003", "T005", "T010"],
-  "blockers": [
-    "D-021: the GEMINI_API_KEY in .env returns 429 RESOURCE_EXHAUSTED 'prepayment credits are depleted' on every request, including a 5-token text-only call. Account-level, not code. T004 is code-complete with 47 tests green but 4 acceptance criteria need one live call; T009 cannot run at all. Owner action: create a key in an AI Studio project with NO billing enabled (the free tier), then run: uv run pytest tests/test_gemini.py -m slow --log-cli-level=INFO"
-  ],
+  "current_task": "T007",
+  "status": "partial",
+  "completed_tasks": ["T001", "T002", "T003", "T004", "T005", "T006", "T010"],
+  "blockers": [],
+  "cleared_2026_07_26": "D-021 resolved - owner supplied a free-tier key and the live run passed. T004 is done. T007's <5 min criterion and T009 are both runnable for real now; neither has been run end-to-end with the live Gemini stage yet.",
   "env": {
     "deps_installed": true,
     "python": "3.12",
     "torch": "2.8.0",
     "whisperx": "3.8.6",
-    "gates": "pytest 101 passed (-m 'not slow'), ruff clean, mypy strict clean (12 files). Slow marker: 2 pass, 1 (gemini real-API) blocked by D-021.",
+    "gates": "pytest 155 passed (-m 'not slow'), ruff clean, mypy strict clean (12 files). Slow marker: 4 total, all 4 pass - the gemini real-API test now runs for real (~2 min, ~38K tokens per run).",
     "gemini_api_key_present": true,
-    "gemini_api_key_usable": false,
-    "gemini_api_key_error": "429 RESOURCE_EXHAUSTED - prepayment credits depleted (D-021)"
+    "gemini_api_key_usable": true
   },
   "test_video": {
     "path": "in.mp4",
@@ -25,9 +23,7 @@
     "shots_at_threshold_27": 117,
     "note": "gitignored; both A/B paths hold the same file. See decisions-log D-003."
   },
-  "open_decisions": [
-    "D-021 - GEMINI_API_KEY has no quota (prepay credits depleted). Needs the owner: a free-tier key. Blocks T004 sign-off and T009."
-  ],
+  "open_decisions": [],
   "resolved_2026_07_26": {
     "D-001": "full index + is_candidate",
     "D-002": "vendored; settings pinned in D-012 + D-015",
@@ -38,7 +34,9 @@
     "D-017": "quality formula: 0.7*sqrt(lap_var/1000) + 0.3*brightness*clipping, rounded 4dp",
     "D-018": "score_shot() takes optional shot_id kwarg; keyframes named after index ids",
     "D-019": "Gemini call settings pinned: temperature 0.4, seed 7, thinking LOW, prompt version p1",
-    "D-020": "429 backoff wraps the File API upload too, not only generate_content"
+    "D-020": "429 backoff wraps the File API upload too, not only generate_content",
+    "D-022": "t_end > t_start is enforced in validate_index(), not in the JSON Schema - draft 2020-12 cannot compare sibling fields, so a generic jsonschema tool checks less than we do",
+    "D-023": "is_candidate is editorial_score >= 0.65, the floor of the rubric's 'strong' band"
   },
   "owner_follow_up": "CLAUDE.md hard constraint 6 and docs/IDEA.md still describe the co-founder repo as a live sync risk. Now aspirational. Left unedited on purpose - see D-016.",
   "transcription": {
@@ -62,7 +60,7 @@
     "note": "sqrt-normalized Laplacian std, saturation 1000.0, weights 0.7/0.3. See D-017."
   },
   "gemini": {
-    "prompt_version": "p1",
+    "prompt_version": "p2",
     "model": "gemini-3.5-flash",
     "media_resolution": "low",
     "sample_fps": 0.5,
@@ -70,10 +68,44 @@
     "seed": 7,
     "thinking_level": "LOW",
     "retry_max_attempts": 5,
-    "tests": "47 fast + 1 slow (real API, skipped without a usable key)",
-    "measured": null,
-    "note": "Settings pinned in D-019. No live numbers yet - token usage and editorial_score spread are unmeasured until D-021 clears."
+    "tests": "47 fast + 1 slow (real API, ~2 min and ~38K tokens per run)",
+    "measured": {
+      "clip": "in.mp4 (7:08, 117 shots)",
+      "calls": 1,
+      "wall_clock_s": 96.8,
+      "upload_s": 24.6,
+      "call_s": 70.3,
+      "tokens_total": 38390,
+      "tokens_prompt": 27693,
+      "tokens_output": 10697,
+      "score_min": 0.5,
+      "score_median": 0.64,
+      "score_max": 0.88,
+      "score_distinct_2dp": 26,
+      "note": "Three p2 runs agreed within 2% on tokens. Score min varies run to run (0.10-0.50) - seed is best-effort, see D-024."
+    },
+    "note": "Settings pinned in D-019. Prompt iterated p1 -> p2 after the first live run clustered (11 distinct scores, all on the 0.05 grid, ceiling 0.75) - see D-024. Token cost is ~38K, not the spec's ~30K, because the estimate omitted audio tokens - see D-025."
   },
-  "next_task": "T006 (validate_index() - the last stub in schema/, one function) then T007 - build.py orchestrator. T006 first because T007 requires validate_index() before writing. Neither waits on D-021: understand()'s signature and output are settled, so build_index can be written and tested against a mocked understanding pass. T004 sign-off and T009 both need the key fixed first.",
-  "last_updated": "2026-07-26T22:10:00Z"
+  "build": {
+    "wall_clock_s": 158.5,
+    "stages_s": {
+      "probe": 0.06,
+      "shots": 31.68,
+      "transcript": 102.75,
+      "understand": 0.0,
+      "quality": 23.85,
+      "join": 0.01,
+      "validate": 0.08,
+      "write": 0.02
+    },
+    "shots": 117,
+    "words": 1436,
+    "silent_shots": 7,
+    "output_kb": 177,
+    "candidate_threshold": 0.65,
+    "gemini_mocked": true,
+    "note": "understand=0.00s because the stage was MOCKED (D-021, now cleared) - the artifact's captions read '[MOCKED] ...'. 158.5s is 53% of the 300s budget with the one stage that matters missing. The real understand stage measures 96.8s standalone, so a live end-to-end run projects to ~230-255s, inside the 300s budget but not by much. NOT yet measured for real - that is T007's last open criterion."
+  },
+  "next_task": "T008 - cli.py, a thin wrapper over build_index(). `python -m elvideo index in.mp4` is a DoD criterion and the two Typer bugs found at bootstrap are already recorded in tasks/T008-cli.md. T007's last criterion (<5 min end-to-end with the real understanding stage) is now RUNNABLE - the key works - and closing it is one live run, cheapest done from the CLI once T008 lands. Then T009.",
+  "last_updated": "2026-07-27T00:40:00Z"
 }

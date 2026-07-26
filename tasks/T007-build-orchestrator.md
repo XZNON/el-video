@@ -1,8 +1,8 @@
 # T007 — `build.py`: orchestrator
 
-**Status:** `not_started` — next up. **Not blocked by D-021**: `understand()`'s signature and output
-are settled, so `build.py` is written and tested against a mocked understanding pass. Only the
-"<5 min on a real 10-min video" criterion needs a live Gemini call.
+**Status:** `partial` (2026-07-26) — implemented, 33 tests, every criterion met **except** the
+<5 min wall-clock one, which cannot be settled while D-021 is open: the run it needs is the one
+with a live Gemini call in it. Everything else ran for real on `in.mp4`.
 
 ## Goal
 
@@ -28,33 +28,66 @@ Also owns `align_understanding(shots, understanding) -> list[Shot]`.
 
 ## Acceptance criteria
 
-- [ ] Stage order: probe → shots → transcript → Gemini → quality → join → validate → write.
-- [ ] **Exactly one Gemini call**, whatever the shot count. Assert the counter from T004.
-- [ ] `align_understanding()` copies `caption`, `editorial_score`, `moment_reason`, `tags` onto
-      the frame-accurate shots and **never touches `t_start` / `t_end`**.
-- [ ] Alignment survives a length mismatch: the model returning 40 segments for 120 detected
+- [x] Stage order: probe → shots → transcript → Gemini → quality → join → validate → write.
+      `test_stage_order` checks it twice: the order the producers were called in, **and** the
+      order of the stage log lines a human reads after a real run.
+- [x] **Exactly one Gemini call**, whatever the shot count. Assert the counter from T004 —
+      `_assert_one_call()` reads `generate_call_count()` back after the stage and aborts on
+      anything but 1. `test_wrong_gemini_call_count_aborts_the_run` covers 0, 2 and 117, and
+      asserts nothing is written when it fires.
+- [x] `align_understanding()` copies `caption`, `editorial_score`, `moment_reason`, `tags` onto
+      the frame-accurate shots and **never touches `t_start` / `t_end`** —
+      `test_alignment_never_touches_timings_or_ids` snapshots `(id, t_start, t_end)` across a
+      call whose judgments carry deliberately wrong hints.
+- [x] Alignment survives a length mismatch: the model returning 40 segments for 120 detected
       shots must not crash, drop shots, or shift the mapping. Unmatched shots keep their
-      defaults (`caption=""`, `editorial_score=None`).
-- [ ] **D-010 is resolved (option 2): alignment is an index lookup on `shot_index`, not an
+      defaults (`caption=""`, `editorial_score=None`) — tested at 3 judgments for 120 shots,
+      and at zero.
+- [x] **D-010 is resolved (option 2): alignment is an index lookup on `shot_index`, not an
       overlap match.** A `shot_index` outside the real range fails loudly — it means the model
       ignored the boundaries it was given, and silently dropping it yields captions on the wrong
-      shots with no error anywhere.
-- [ ] Every detected shot appears in the output — **full index, not top-N** (D-001).
-- [ ] `is_candidate` is derived from `editorial_score`, with the threshold documented and
-      recorded, not a magic number buried in a comparison.
-- [ ] `transcript` is `words_in_range()` joined; silent shots get `""`, not `None`.
-- [ ] `index_meta` records what **actually ran** — the real `sample_fps` and `media_resolution`
+      shots with no error anywhere. Duplicates raise too, for the same reason.
+- [x] Every detected shot appears in the output — **full index, not top-N** (D-001). Checked at
+      120 synthetic shots with 2 judgments, and at 117 real ones.
+- [x] `is_candidate` is derived from `editorial_score`, with the threshold documented and
+      recorded, not a magic number buried in a comparison — `CANDIDATE_THRESHOLD = 0.65`, the
+      floor of the rubric's **strong** band, reasoned in **D-023**. A null score is never a
+      candidate.
+- [x] `transcript` is `words_in_range()` joined; silent shots get `""`, not `None`.
+- [x] `index_meta` records what **actually ran** — the real `sample_fps` and `media_resolution`
       used for this run, not the defaults. `path_variant` is `"gemini"`.
-- [ ] `index_meta.scene_detector` / `.scene_threshold` carry the values **actually passed to
-      `detect_shots()`** (D-013). Both are required with no schema default, so an index that
-      doesn't set them fails `validate_index()` — read them off the call, don't re-read the
-      module constants.
-- [ ] Output validates via `validate_index()` **before** it is written. A validation failure
-      leaves no partial file behind.
-- [ ] **Per-stage timing logged** — one line per stage plus a total. "Total: 4m12s" alone fails
-      this criterion.
-- [ ] `embedding` is `null` on every shot.
-- [ ] Full run on a 10-min video completes in **<5 min wall-clock**.
+      `test_index_meta_records_what_actually_ran` passes non-default values on every axis.
+- [x] `index_meta.scene_detector` / `.scene_threshold` carry the values **actually passed to
+      `detect_shots()`** (D-013). `threshold` is a keyword-only parameter on `build_index`, and
+      the test asserts the same number reached `detect_shots()` and `index_meta`.
+- [x] Output validates via `validate_index()` **before** it is written. A validation failure
+      leaves no partial file behind — and the write itself goes through a temp file plus
+      `os.replace`, so a crash mid-write can't truncate a good index either.
+- [x] **Per-stage timing logged** — one line per stage plus a total. All eight stages log their
+      own line; the summary line repeats the breakdown alongside the total.
+- [x] `embedding` is `null` on every shot.
+- [~] Full run on a 10-min video completes in **<5 min wall-clock**. **Measured 158.5s on
+      `in.mp4` (7:08, 117 shots) with the Gemini stage mocked (D-021)** — probe 0.06s, shots
+      31.7s, transcript 102.8s, understand **0.00s (mocked)**, quality 23.9s, join 0.01s,
+      validate 0.08s, write 0.02s. That is 53% of the 300s budget with the one stage that
+      matters missing, so ~141s of headroom is left for the upload plus the single
+      `generate_content` call. **Not ticked**: the number is a floor, not the criterion. Rerun
+      once D-021 clears.
+
+## Measured on `in.mp4` (2026-07-26, Gemini mocked)
+
+| | |
+|---|---|
+| Shots | **117**, gapless, `t_start=0.0` → `t_end=428.04` |
+| Words | 1436, 7 silent shots of 117 |
+| Keyframes | 117 in `work/keyframes/`, names match index ids exactly (D-018) |
+| Output | `work/footage_index.json`, 177 KB, passes `validate_index()` |
+| `index_meta` | `gemini` / `gemini-3.5-flash` / `low` / `0.5` / `ContentDetector` / `27.0` |
+| Wall-clock | **158.5s**, Gemini stage excluded |
+
+Container/stream skew is as D-014 describes: `duration_s` 428.106 vs last `t_end` 428.04.
+Captions in that file read `[MOCKED] no live Gemini call was made for shot N` — the artifact
+cannot be mistaken for a real Path B index.
 
 ## Constraints that bite here
 

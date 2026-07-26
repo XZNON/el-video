@@ -1,6 +1,8 @@
 # T006 — `schema/`: the shared contract + validator
 
-**Status:** `partial` — scaffold seeded a first cut; this task **locks** it.
+**Status:** `done` (2026-07-26) — scaffold seeded a first cut; this task **locked** it.
+`validate_index()` is implemented; see D-022 for the one invariant that lives in code rather than
+in the schema file.
 
 ## Goal
 
@@ -35,16 +37,26 @@ the co-founder sign-off criterion is N/A on a solo repo (D-016). **All that rema
 
 ## Acceptance criteria
 
-- [ ] Pydantic models mirror `docs/schema.md` **exactly** — same field names, same types, same
+- [x] Pydantic models mirror `docs/schema.md` **exactly** — same field names, same types, same
       nullability. `tests/test_schema.py::test_block_fields_match_pydantic` enforces this.
-- [ ] `embedding` is present, typed nullable, defaults to `None`, and **no code writes to it**.
-- [ ] `editorial_score` and `moment_reason` are nullable, so a Path A index validates against the
+      Confirmed unchanged this session; all four blocks covered since D-013.
+- [x] `embedding` is present, typed nullable, defaults to `None`, and **no code writes to it** —
+      the second half is now enforced, not asserted in prose:
+      `test_no_code_writes_the_embedding_field` scans `elvideo/` outside `schema/` for
+      `embedding=` / `"embedding":` and fails on a hit.
+- [x] `editorial_score` and `moment_reason` are nullable, so a Path A index validates against the
       same schema. That permission is the A/B measurement, not a loophole.
-- [ ] `validate_index()` is implemented on `jsonschema`, works on a plain dict (no pydantic
-      involvement), and raises `ValidationError` with a useful path into the document.
-- [ ] A hand-written minimal valid document passes; a document with an extra top-level key fails
-      (`additionalProperties: false` is deliberate); a document with `t_end < t_start` fails.
-- [ ] `Shot.id` pattern accommodates 100+ shots (`^shot_[0-9]{3,}$`, not exactly-3).
+      `test_path_a_shaped_document_validates` runs a `path_variant="local"` document with both
+      fields null through the same call.
+- [x] `validate_index()` is implemented on `jsonschema`, works on a plain dict (no pydantic
+      involvement), and raises `ValidationError` with a useful path into the document — messages
+      are prefixed with the JSON path (`$.shots[1].editorial_score: ...`), the first error in
+      document order is the one reported, and the total violation count is stated.
+- [x] A hand-written minimal valid document passes; a document with an extra top-level key fails
+      (`additionalProperties: false` is deliberate); a document with `t_end < t_start` fails —
+      the last one via a Python check, because JSON Schema cannot express it. **See D-022.**
+- [x] `Shot.id` pattern accommodates 100+ shots (`^shot_[0-9]{3,}$`, not exactly-3).
+      `shot_1000` validates; `shot_07`, `SHOT_007`, `shot_007a`, `007` all fail.
 - [x] **D-001 resolved and logged** (2026-07-26) — full index + `is_candidate`. No code change;
       the scaffold already implemented the assumption.
 - [x] **D-013 resolved and logged** (2026-07-26) — **shipped.** `index_meta` gained
@@ -54,7 +66,7 @@ the co-founder sign-off criterion is N/A on a solo repo (D-016). **All that rema
 - [ ] ~~The schema file is shared with the co-founder and confirmed against what Path A emits~~ —
       **N/A, solo repo (D-016).** The remaining check is local: the two artifacts agree
       field-for-field, which `test_block_fields_match_pydantic` now covers for all four blocks.
-- [ ] `uv run pytest tests/test_schema.py` passes clean.
+- [x] `uv run pytest tests/test_schema.py` passes clean — **31 tests** (was 8).
 
 ## Constraints that bite here
 

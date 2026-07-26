@@ -507,7 +507,7 @@ matching the ids in `footage_index.json` and the folder becomes unusable for deb
 
 ## D-019 — Gemini call settings and the prompt version
 
-**Status:** `resolved` for this repo · **Date:** 2026-07-26 · **Feeds:** T004 · **Unverified against the live API — see D-021**
+**Status:** `resolved` for this repo · **Date:** 2026-07-26 · **Feeds:** T004 · **Verified live 2026-07-26 — D-021 cleared; prompt is now `p2`, see D-024**
 
 `docs/IDEA.md` § *Gemini call settings (locked)* fixes the model, `media_resolution`, `fps`,
 structured output, and backoff. It says nothing about the sampling parameters, which change the
@@ -582,7 +582,9 @@ hidden retries would defeat the instrument.
 
 ## D-021 — The `GEMINI_API_KEY` has no quota; T004 is code-complete but unverified
 
-**Status:** `open` — **needs the owner** · **Date:** 2026-07-26 · **Blocks:** T004 sign-off, T009
+**Status:** **`resolved` 2026-07-26** — the owner supplied a free-tier key and the live run passed.
+Kept in full below because the diagnosis is the reusable part: if this recurs, it is the *project's
+billing mode*, not the code. · **Was blocking:** T004 sign-off, T009 — both now clear.
 
 Every request on the key in `.env` returns:
 
@@ -619,3 +621,181 @@ place and asserted against mocks — what is missing is one call.
 
 **Deliberately not worked around.** Switching model, provider, or tier would break the pinned
 `gemini-3.5-flash` constraint and make the A/B measure something else.
+
+**Resolution (2026-07-26):** new key, first live run passed —
+`gemini generate_content request #1 model=gemini-3.5-flash fps=0.5 media_resolution=low prompt=p1`,
+117 shots, one call, upload deleted. The four unverified criteria are settled in **D-024**
+(score spread, `moment_reason` quality) and **D-025** (token budget). The free-segmentation
+`shots=None` path is still only unit-tested live-wise — it costs a second call on the same clip and
+was judged not worth the quota while the boundary path is the one every task uses.
+
+---
+
+## D-024 — Prompt iterated `p1` → `p2` after the first live run clustered
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Feeds:** T004 · **Supersedes the `p1` half of D-019**
+
+The first real run technically passed, and that was the problem. Measured on `in.mp4`, 117 shots,
+identical settings, prompt the only variable:
+
+| | p1 | p2 |
+|---|---|---|
+| Distinct scores at 2dp | **11** | **37** |
+| Scores landing on the 0.05 grid | **117/117** | **32/117** |
+| Range (min–max) | 0.10–0.75 | 0.10–0.85 |
+| Median | 0.60 | 0.61 |
+| Hero band (≥0.85) used | **never** | yes |
+
+`p1` produced 97 of 117 shots inside 0.50–0.65, every score a multiple of 0.05, and a ceiling of
+0.75 — the model quietly refused the top band on ordinary footage and picked from about a dozen
+round numbers. That is the "everything is 0.8" failure the task names, in a form that slips past a
+naive check: the scores *are* different, they are just not judgments.
+
+**What `p2` changes** (rubric bands unchanged — the fix is procedural, not a new scale):
+
+1. **Rank, then score.** Pick the few shots you would build the edit around and the few you would
+   never use *first*, let those anchor the ends, then place everything else between. Scoring shot
+   by shot in isolation is what produces a video where every shot is a 0.6.
+2. **The top band is not withheld for ordinary footage.** "Whatever the strongest moment here is,
+   it IS the strongest moment here."
+3. **Two decimals, and use the digits** — 0.58 and 0.63 are different judgments; 0.60 for both is
+   a refusal to choose. No score shared by more than ~10 shots.
+4. **A category label is not evidence.** "Standard b-roll" / "connective tissue" / "establishing
+   shot" say nothing a reader could disagree with. "Third exterior pan of the same car" is
+   evidence; "standard exterior b-roll" is not.
+
+**Caption quality was never the problem** — `p1`'s captions were already specific and correct
+("presenter holding a tablet showing a tiger, explaining the name Tiguan"). Only the scoring and
+the reasons needed the work.
+
+**Run-to-run variance is real and `seed` does not remove it.** Three `p2` runs of the same clip
+gave min-scores of 0.10, 0.50, 0.50 and distinct counts of 37, ?, 26 — the model's willingness to
+call the outro frames unusable moves between runs. This is why the slow test asserts **granularity**
+(distinct ≥ 15, fewer than 90% on the 0.05 grid) as the primary anti-clustering guard and keeps the
+range threshold at a loose 0.3: `p1` fails the granularity assertions on every run, which is what a
+regression guard has to do.
+
+**Not fixed by `p2`, accepted:** a handful of `moment_reason` values still open with a category
+label ("Standard b-roll showing the exterior profile") — 4 of 117, versus 3 under `p1`. Below the
+threshold where another prompt round is worth a quota call; revisit if a downstream consumer
+actually trips on it.
+
+---
+
+## D-025 — Real token cost is ~38K, not the ~30K the spec targets
+
+**Status:** `resolved` — **measured, target restated** · **Date:** 2026-07-26 · **Affects:** T004, T009, the A/B writeup
+
+`docs/IDEA.md` § *Gemini call settings* budgets **≈30K tokens per 10-min video**, and D-003
+recomputed that as ~14K for this 7:08 clip: 214 frames at 0.5 fps × 66 tok/frame at `low`.
+
+**Measured, three runs on `in.mp4` (7:08):**
+
+| | |
+|---|---|
+| Prompt tokens | **27,404 / 27,693 / 27,693** |
+| Output tokens | 11,280 / 11,481 / 10,697 |
+| **Total** | **38,684 / 39,174 / 38,390** |
+| Wall-clock | 103.0s / 108.8s / 96.8s (upload ~25s, call ~70s) |
+
+**Why D-003's estimate was low: it counted video frames and forgot the audio.** Gemini tokenizes
+the soundtrack as well as the sampled frames, and audio is charged per second of duration
+regardless of `fps` or `media_resolution` — the two knobs the spec offers only move the visual
+half. Roughly: ~14K visual + ~12K audio + ~2K for the 117-line boundary list and the rubric.
+
+**Consequences, none of them blocking:**
+
+- A **10-min** clip should land near **~54K total**, not 30K. Still far under the 250K/min TPM cap,
+  so the "iterate freely all day" claim in the spec survives intact — it is the stated *number*
+  that was wrong, not the conclusion.
+- Output tokens (~11K) are a third of the bill and scale with **shot count**, not duration. A
+  300-shot video costs meaningfully more to describe than a 100-shot one of the same length.
+- `thoughts_token_count` comes back `None` despite `THINKING_LEVEL=LOW`, so thinking is either not
+  billed separately here or not reported. Logged either way; do not silently assume it is zero.
+
+**Not treated as a regression.** Nothing was tuned to chase 30K: lowering `fps` would only touch
+the visual half, and raising the target to match reality is more honest than trimming the input
+until an estimate that omitted audio comes true. **T009 should assert against ~40K for this clip,
+not 30K**, and the A/B writeup should quote the measured number with the audio breakdown.
+
+---
+
+## D-022 — `t_end > t_start` is enforced in `validate_index()`, not in the JSON Schema
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Feeds:** T006, T007 · **Contract-adjacent — read this before diffing the schema against another repo**
+
+T006's acceptance criteria require that *"a document with `t_end < t_start` fails"*. **JSON Schema
+draft 2020-12 cannot express it.** There is no way to compare two sibling properties of the same
+object; `exclusiveMinimum` takes a constant, not a reference to another field. So a document with
+a backwards or zero-length shot validates cleanly against `footage_index.schema.json`.
+
+**Decision:** `validate_index()` runs two checks in order — the JSON Schema first, then
+`_check_shot_timings()` in Python — and raises the same `jsonschema.ValidationError` type from
+both, with `path = ["shots", i, "t_end"]`, so callers cannot tell which half rejected the
+document.
+
+**The cost, stated plainly:** the two artifacts are no longer equivalent. Anyone validating
+`footage_index.json` with a generic JSON Schema tool (`ajv`, `check-jsonschema`, a Path A repo in
+another language) gets a **weaker** check than `validate_index()` does. That is the exact
+asymmetry D-009 exists to prevent, so it is written down here rather than left to be discovered.
+
+**Why not drop the criterion instead:** the invariant is real. `Shot` already enforces it as a
+pydantic `model_validator`, and PySceneDetect cannot emit a backwards shot — but the whole point
+of validating a plain dict is to catch a document that *never went through pydantic*: one read
+back off disk, hand-edited, or produced by Path A.
+
+**Pinned by a test that fails if the situation changes.**
+`test_schema_alone_does_not_catch_backwards_timings` asserts that raw `jsonschema` *accepts* the
+backwards document. If a future dialect or a schema rewrite ever makes the constraint expressible,
+that test goes red — which is the only way anyone would notice that the Python half is now
+redundant.
+
+**Also landed here:** `validate_index()` prefixes every error message with its JSON path
+(`$.shots[42].editorial_score: 1.5 is greater than the maximum of 1`) and reports the
+document-order-first error plus a total count. At 117 shots, `ValidationError.message` alone
+("1.5 is greater than the maximum of 1") does not say which shot.
+
+**Tooling note:** `jsonschema` ships no inline types, so `types-jsonschema` was added as a dev
+dependency to keep `mypy --strict` clean. Stub-only package, matched to the runtime version
+(4.26).
+
+---
+
+## D-023 — `is_candidate` threshold is `editorial_score >= 0.65`
+
+**Status:** `resolved` for this repo · **Date:** 2026-07-26 · **Feeds:** T007 · **Cross-repo:** Path A must match, or `is_candidate` is not comparable
+
+T007 requires `is_candidate` to be *"derived from `editorial_score`, with the threshold documented
+and recorded, not a magic number buried in a comparison."* `docs/IDEA.md` says only that
+`is_candidate` is a "flagged good-moment" and a derived view (D-001); it never names a number.
+
+**Decision:** `CANDIDATE_THRESHOLD = 0.65` in `elvideo/index/build.py`, compared with `>=`.
+
+**Why 0.65 specifically — it is read off the rubric, not chosen by feel.** The scoring bands in
+`gemini.SYSTEM_INSTRUCTION` (D-019) are:
+
+| Band | Meaning |
+|---|---|
+| 0.85–1.00 | hero moment — the shot you would open or close on |
+| **0.65–0.84** | **strong — clear subject, purposeful motion, or a sound bite that stands alone** |
+| 0.40–0.64 | useful connective tissue, real but replaceable. *Most shots land here.* |
+| 0.15–0.39 | weak |
+| 0.00–0.14 | unusable |
+
+0.65 is the floor of **strong**, so `is_candidate` means exactly "the model called this strong or
+better". Any other value would cut a band in half and stop corresponding to anything the model was
+asked to do. **If the rubric bands are ever re-cut, this constant moves with them** — they are one
+decision, not two.
+
+**A null score is not a candidate.** `editorial_score is None` means the shot was never judged —
+the model returned nothing for it, or the index came from Path A, where the field is legitimately
+null (`docs/schema.md`). Unknown is not good, and a bare `>=` against `None` would be a
+`TypeError` anyway.
+
+**Cheap to revisit, deliberately.** Because the index is full rather than top-N (D-001), changing
+the threshold is one pass over `shots[]` — no re-run, no second Gemini call. That is the payoff
+D-001 was argued on.
+
+**Not recorded in the artifact.** `index_meta` has no field for it, and adding one is a contract
+change with D-013's cost. The constant plus this entry is the record. Revisit if the A/B writeup
+needs two indexes at different thresholds to be told apart from the file alone.

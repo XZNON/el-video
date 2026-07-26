@@ -508,3 +508,210 @@ strict clean, 12 files. The slow marker now holds 3 tests: 2 pass, and the new r
   `score_shot()` (D-018), must populate `index_meta.scene_detector` / `.scene_threshold` from the
   values actually passed to `detect_shots()` (D-013), and must log **per-stage** timing.
 - In parallel, whenever the owner has a free-tier key: rerun the T004 slow test and close D-021.
+
+---
+
+## 2026-07-26 — T006 + T007 · the validator, then the orchestrator
+
+**Task(s):** T006 — `validate_index()`; T007 — `build.py`, the join point
+**Status at end:** T006 **`done`**, every criterion ticked. T007 **`partial`** — implemented and
+measured on the real clip, but the `<5 min wall-clock` criterion cannot be settled while the
+Gemini stage is mocked (D-021), so it is marked `[~]` rather than ticked.
+
+### Done
+
+**T006 — `elvideo/schema/__init__.py`.**
+
+- `validate_index(doc)` on `jsonschema`, against a **plain dict with no pydantic involvement** —
+  the JSON Schema is the interoperability artifact (D-009), and validating through pydantic would
+  only prove pydantic agrees with itself.
+- The validator is compiled once (`@lru_cache`) and its dialect comes from the schema's own
+  `$schema` key rather than being hardcoded.
+- **Errors carry a path.** Messages are prefixed with the JSON path
+  (`$.shots[42].editorial_score: 1.5 is greater than the maximum of 1`), the first error in
+  *document* order is the one raised, and the total violation count is stated. At 117 shots,
+  `ValidationError.message` alone does not say which shot.
+- **`t_end > t_start` is enforced in code, not in the schema** — see D-022 below. Same exception
+  type, same path shape, so callers cannot tell which half rejected the document.
+- `tests/test_schema.py` — **31 tests** (was 8): minimal valid document, Path-A-shaped document
+  (both judgment fields null, `path_variant: "local"`), pydantic round-trip, extra key at top level
+  and inside a shot, backwards and zero-length shots, five malformed shot ids, `shot_1000`,
+  missing detector settings, `transcript: null`, unknown `path_variant`, document-order error
+  reporting.
+- **`embedding` "no code writes to it" is now enforced, not asserted in prose.**
+  `test_no_code_writes_the_embedding_field` scans `elvideo/` outside `schema/` for `embedding=` or
+  `"embedding":` and fails on a hit.
+
+**T007 — `elvideo/index/build.py`, full implementation.**
+
+- `build_index(path, work_dir="work", fps=..., media_resolution=..., *, threshold=...)`.
+  `threshold` is keyword-only — the same extend-a-fixed-signature pattern as D-012 / D-018 — so
+  `index_meta.scene_threshold` can carry the value **actually passed to `detect_shots()`** (D-013)
+  rather than a re-read of the module constant.
+- Stage order probe → shots → transcript → Gemini → quality → join → validate → write, each one
+  timed by a `_stage()` context manager that logs its own line, plus a summary line with the
+  breakdown and the total. Timing happens in `finally`, so a stage that *fails* still reports how
+  long it ran — which is the number you want when a stage blew the budget.
+- **The one-call rule is checked, not assumed.** `_assert_one_call()` reads
+  `gemini.generate_call_count()` back after the understanding stage and aborts on anything but 1.
+- `align_understanding()` is an **index lookup on `shot_index`** (D-010), not an overlap match.
+  Out-of-range and duplicate indices raise; a short response only warns and leaves those shots with
+  their defaults; an empty response still yields a full valid index. `t_start`, `t_end` and `id` are
+  never touched.
+- `is_candidate` from `CANDIDATE_THRESHOLD = 0.65` (D-023). A null score is never a candidate.
+- Writes via a temp file plus `os.replace`, so a crash mid-write cannot truncate a good index.
+  Validation runs **before** the write, so a failure leaves nothing behind.
+- `tests/test_build.py` — **33 fast + 1 slow.** Alignment gets synthetic inputs and no mocks
+  (1:1, 3 judgments for 120 shots, none at all, out-of-range at 4/40/999, duplicate, more segments
+  than shots, tag-list aliasing, the short-response warning). `build_index` runs with every
+  producer stage faked: stage order checked against both the call record *and* the log lines,
+  call-count abort at 0/2/117, `index_meta` with non-default values on every axis, transcript
+  slicing, `is_candidate` at the 0.65 boundary, `shot_id` passed to `score_shot` (D-018),
+  `embedding` null, per-stage logging, no file left after a validation failure.
+
+**Measured on `in.mp4` — the full pipeline, Gemini mocked (D-021):**
+
+| Stage | Wall-clock |
+|---|---|
+| probe | 0.06s |
+| shots | 31.68s |
+| transcript | 102.75s |
+| **understand** | **0.00s — MOCKED, no live call** |
+| quality | 23.85s |
+| join | 0.01s |
+| validate | 0.08s |
+| write | 0.02s |
+| **Total** | **158.5s** (a second warm run under pytest: 131.8s) |
+
+Output: 117 shots, gapless, `t_start=0.0` → `t_end=428.04`; 1436 words; 7 silent shots; 117
+keyframes whose names match the index ids exactly; `work/footage_index.json` at 177 KB, passing
+`validate_index()`. Container/stream skew is exactly as D-014 predicted (428.106 vs 428.04).
+
+**Gates:** `uv run pytest -m "not slow"` **155 passed** (was 101); slow marker now 4 — 3 pass
+(transcribe, quality, build), 1 still blocked by D-021; `ruff check .` clean; `mypy elvideo` strict
+clean, 12 files.
+
+### Not done / deferred
+
+- **The `<5 min wall-clock` criterion is not ticked.** 158.5s is 53% of the 300s budget, but it is
+  a **floor, not the measurement**: the missing stage is the entire point of Path B. Roughly 141s
+  of headroom remains for the upload plus one `generate_content` call. Re-measure when D-021 clears.
+- **`work/footage_index.json` on disk is a mocked artifact.** Every caption reads
+  `[MOCKED] no live Gemini call was made for shot N` and every `moment_reason` reads
+  `[MOCKED] placeholder judgment, D-021`, deliberately, so the file cannot be mistaken for a real
+  Path B index by a later session. `editorial_score` values in it are a synthetic sawtooth; the
+  "42 of 117 candidates" it produces measures the generator, not the model.
+- **Concurrency stays out of scope**, as the task file directed: probe/shots/transcript/gemini are
+  independent and could overlap. Get the sequential version correct and timed first.
+- `docs/architecture.md` and `docs/schema.md` untouched — this session implements what they already
+  describe, it does not change the contract's shape.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-022 (new)** — `t_end > t_start` is enforced in `validate_index()`, **not** in the JSON
+  Schema, because draft 2020-12 cannot compare two sibling properties. **Stated cost:** the two
+  artifacts are no longer equivalent — anyone validating the file with a generic tool (`ajv`,
+  `check-jsonschema`, a Path A repo in another language) gets a *weaker* check than we do, which is
+  the exact asymmetry D-009 exists to prevent. Pinned by
+  `test_schema_alone_does_not_catch_backwards_timings`, which asserts that raw `jsonschema`
+  **accepts** the backwards document — so if a future dialect ever makes the constraint
+  expressible, that test goes red and the Python half can be deleted.
+- **D-023 (new)** — `is_candidate` is `editorial_score >= 0.65`, read off the rubric rather than
+  chosen by feel: 0.65 is the floor of the **strong** band in `gemini.SYSTEM_INSTRUCTION`
+  (0.65–0.84 strong, 0.85+ hero, 0.40–0.64 "useful connective tissue"). If the bands are re-cut,
+  this constant moves with them — they are one decision, not two. Not recorded in the artifact:
+  `index_meta` has no field for it and adding one carries D-013's contract cost.
+- **Tooling:** `types-jsonschema` added as a dev dependency. `jsonschema` ships no inline types and
+  `mypy` is configured strict; stub-only package, matched to the runtime version (4.26).
+- No conflict with `docs/IDEA.md` to log under the CLAUDE.md conflict rule.
+
+### Blockers
+
+- **D-021 — still the only blocker, and it now touches three tasks.** T004's four `[~]` criteria,
+  **T007's wall-clock criterion**, and all of T009. **What would unblock it:** a key from an AI
+  Studio project with **billing not enabled**, then
+  `uv run pytest tests/test_gemini.py -m slow --log-cli-level=INFO`, then re-run
+  `tests/test_build.py -m slow` without the `understand` monkeypatch.
+- **T008 is not blocked by it** — the CLI is a thin wrapper over `build_index`, and its criteria are
+  about argument parsing, exit codes and help text.
+- The D-016 owner follow-up (CLAUDE.md hard constraint 6) is still open and still blocks nothing.
+
+### Next
+
+- **T008 — `cli.py`**: `prompts/session-start/006-cli.md`. Thin wrapper; the two Typer traps from
+  the bootstrap session (single-command collapse, non-ASCII help strings on a cp1252 console) are
+  recorded in the task file and must not be reintroduced.
+- Then T009, which needs the key. And whenever the owner has one: rerun both slow tests and close
+  D-021.
+
+---
+
+## 2026-07-26 — T004 live verification · D-021 cleared, prompt iterated to `p2`
+
+**Task(s):** T004 — the four criteria left `[~]` when the API key had no quota
+**Status at end:** T004 **`done`**. No blockers anywhere in `progress.json` for the first time.
+
+### Done
+
+- **Owner supplied a working free-tier key. D-021 resolved.** First live run passed on the first
+  attempt with no code changes: `gemini generate_content request #1 model=gemini-3.5-flash fps=0.5
+  media_resolution=low prompt=p1`, 117 shots, one call, upload deleted.
+- **Prompt iterated `p1` → `p2` — and this was the real work of the session.** `p1` technically
+  passed and that was the problem: 11 distinct scores, **117/117 of them on the 0.05 grid**, a
+  ceiling of 0.75, and 97 of 117 shots inside 0.50–0.65. The model refused the hero band on
+  ordinary footage and picked from a dozen round numbers. `p2` adds rank-before-you-score, an
+  explicit "the best shot here IS the best shot here", two-decimal precision with no score shared by
+  more than ~10 shots, and "a category label is not evidence". Result on the same clip: **37
+  distinct values, 32/117 on the grid, hero band reached (0.85)**. Full table in **D-024**.
+- **Regression guard tightened to match.** The slow test now asserts *granularity* — ≥15 distinct
+  values and <90% on the 0.05 grid — which `p1` fails on every run. The first attempt also raised
+  the range threshold to 0.4; a later run scored min 0.50 and failed it, so **the range assertion
+  was put back to 0.3 and the reason written into the test**: whether the model calls the outro
+  frames unusable genuinely varies run to run, and `seed` is best-effort. Granularity is the signal
+  that actually detects clustering.
+- **`moment_reason` verified by reading all 117**, not by sampling: *"Hero shot demonstrating
+  real-world rear seat width with three adults"*, *"Third exterior pan of the same car"*. Evidence,
+  not a second caption. 4 of 117 still open with a category label — recorded as accepted.
+- **Token cost measured and the spec's target corrected** — see **D-025**. Three runs: **38,684 /
+  39,174 / 38,390** total, prompt ~27.7K of it. The spec's ≈30K (and D-003's ~14K for this clip)
+  counted sampled frames and **omitted the audio track**, which Gemini bills per second regardless
+  of `fps` or `media_resolution`.
+- Final state: `pytest -m "not slow"` **155 passed**, `ruff` clean, `mypy` strict clean, and the
+  gemini slow test **1 passed** for real (~2 min, ~38K tokens per run).
+
+### Not done / deferred
+
+- **The `shots=None` free-segmentation path still has never run live.** It costs a second call on
+  the same clip and every consumer in this repo uses the boundary path. Written into T004 as
+  explicitly not-verified rather than quietly ticked — it was never one of the task's acceptance
+  criteria.
+- **T007's `<5 min` criterion is still unmeasured for real.** It is no longer *blocked* — the key
+  works — but nobody has yet run `build_index` end to end with the live understanding stage. The
+  arithmetic: 158.5s mocked + 96.8s for the real stage ≈ **230–255s against a 300s budget**. Inside
+  it, but not by much, and the projection is not the measurement.
+- Four live calls were spent this session (p1 run, p1 dump for inspection, p2 run, final green
+  gate). No commit — the user drives git.
+
+### Decisions made
+
+- **D-021 → resolved.** Kept in full in the log rather than deleted: the diagnosis is the reusable
+  part. If it recurs it is the *project's billing mode*, not the code.
+- **D-024 (new)** — the `p1` → `p2` iteration with the measured before/after, why granularity is
+  the assertion that matters, and the run-to-run variance that `seed` does not remove.
+- **D-025 (new)** — real token cost ~38K for a 7:08 clip, ~54K projected for 10 min, with the audio
+  explanation. **T009 should assert against ~40K for this clip, not 30K.** Deliberately not "fixed"
+  by trimming inputs — raising the target to match reality beats making a wrong estimate come true.
+- **D-019 updated** — no longer marked unverified; `PROMPT_VERSION` is now `p2`.
+
+### Blockers
+
+- **None.** `progress.json.blockers` is empty and `open_decisions` is empty.
+- The D-016 owner follow-up (CLAUDE.md hard constraint 6 describing a Path A that does not exist) is
+  still open and still blocks nothing.
+
+### Next
+
+- **T008 — `cli.py`**: `prompts/session-start/006-cli.md`. Needs no key.
+- Then **one live CLI run closes T007's last criterion and feeds T009 at once** — same ~38K tokens,
+  two results.

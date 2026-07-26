@@ -1,9 +1,14 @@
 # T004 — `gemini.py`: native understanding pass
 
-**Status:** `blocked` — code complete, gates green, **no live API run possible**: the
-`GEMINI_API_KEY` in `.env` returns `429 RESOURCE_EXHAUSTED — "Your prepayment credits are
-depleted"` on every request, including a 5-token text-only call. Account-level, not this code.
-See D-021. Four criteria below need one real call and are marked `[~]` rather than ticked.
+**Status:** `done` (2026-07-26) — every acceptance criterion met, **verified against the live API**.
+D-021 (the dead key) is cleared. The prompt was iterated `p1` → `p2` on the strength of the first
+real run, which clustered: see **D-024** for the before/after, and **D-025** for the token budget,
+which measures ~38K rather than the ~30K the spec assumes.
+
+**Live run, `in.mp4` (7:08, 117 shots), prompt `p2`:** one `generate_content` call · 117 shots
+judged · 96.8s wall-clock (upload 24.6s, call 70.3s) · 38,390 tokens (prompt 27,693 / output
+10,697) · `editorial_score` min 0.50, median 0.64, max 0.88, 26 distinct values at 2dp · upload
+deleted.
 
 ## Goal
 
@@ -30,7 +35,8 @@ The video is uploaded to the **Gemini File API**, which holds it 48h free. We do
 
 ## Acceptance criteria
 
-Legend: `[x]` verified · `[~]` implemented, unverifiable without a working key (D-021).
+Legend: `[x]` verified. The four criteria that were `[~]` pending a working key are now settled
+against the live API — each carries the measured number.
 
 - [x] **Exactly one** `generate_content` call per invocation, independent of shot count. Assert
       it — instrument a call counter that T009 can read out of the log, don't just intend it.
@@ -67,23 +73,37 @@ Legend: `[x]` verified · `[~]` implemented, unverifiable without a working key 
       warns instead, since a missing caption is visible and recoverable while a misnumbered one is
       neither.
 - [x] Token usage from the response is logged, so T009 can check the ≈30K target against a real
-      number. → `gemini tokens: prompt=… output=… thoughts=… total=…`, asserted in
-      `test_token_usage_is_logged`. **The number itself is still unmeasured** — see D-021.
-- [~] `editorial_score` values come back in `0.0`–`1.0` and are not all identical — a model that
-      scores everything `0.8` is a prompt bug, not a passing run. → the range is enforced by the
-      schema; the *spread* is what needs a live run. Instrumented rather than assumed: every run
-      logs `min/median/max/stdev/distinct@2dp` and **warns** when stdev < 0.05, and the slow
-      integration test fails if range ≤ 0.3 or fewer than 8 distinct values. Prompt gives a
-      five-band rubric and says a run of identical scores is a failure of the task.
-- [~] `moment_reason` is a short justification, not a restatement of the caption. → prompt asks
-      for the *evidence* for the score in ≤15 words and forbids re-describing the shot; whether the
-      model complies is a live-run question.
+      number. → `gemini tokens: prompt=… output=… thoughts=… total=…`. **Measured: 38,390 total
+      (prompt 27,693 / output 10,697) across three runs within 2% of each other.** That is above
+      the spec's ≈30K, because D-003's estimate counted sampled frames and omitted the audio track
+      — see **D-025**. Not a regression and not blocking: it is ~15% of the 250K TPM cap.
+- [x] `editorial_score` values come back in `0.0`–`1.0` and are not all identical — a model that
+      scores everything `0.8` is a prompt bug, not a passing run. → **`p1` failed this in
+      substance while passing in form**: 11 distinct values, all on the 0.05 grid, ceiling 0.75,
+      97/117 inside 0.50–0.65. `p2` fixed it — 26–37 distinct values, only 32/117 on the grid, hero
+      band reached (0.85–0.88). Guarded going forward: every run logs
+      `min/median/max/stdev/distinct@2dp` and warns below stdev 0.05, and the slow test asserts
+      **granularity** (≥15 distinct, <90% on the 0.05 grid), which `p1` fails on every run. See
+      **D-024**.
+- [x] `moment_reason` is a short justification, not a restatement of the caption. → verified by
+      reading all 117. Typical output: *"Hero shot demonstrating real-world rear seat width with
+      three adults"*, *"Third exterior pan of the same car"*, *"Basic front-on shot, slightly
+      redundant"* — evidence, not a second caption. **4 of 117 still open with a category label**
+      ("Standard b-roll showing the exterior profile"); logged in D-024 as accepted rather than
+      chased with another prompt round.
 - [x] Uploaded File API handle is cleaned up or allowed to expire deliberately — don't leak a
       new upload on every debug run without noticing. → deleted in a `finally`, so it happens on
       the failure path too; a failed delete warns rather than masking the real result.
-- [~] Token budget ≈30K for a 10-min clip at `low`/`0.5fps`. Unmeasured (D-021).
-- [~] The `shots=None` free-segmentation fallback works against the real model. Unit-tested
-      (schema swaps to include hints, prompt swaps to the segmentation instruction), not run live.
+- [x] Token budget for a 10-min clip at `low`/`0.5fps`. **Measured ~38K for 7:08, so ~54K
+      extrapolated to 10 min** — above the spec's ≈30K, restated with the reasoning in **D-025**.
+      The conclusion the number was serving ("iterate freely all day") survives: still ~20% of the
+      250K TPM cap.
+
+**One thing deliberately not verified live** (not an acceptance criterion — the task file never
+asked for it; recorded so nobody later assumes it was covered): the `shots=None`
+free-segmentation fallback has only ever run against mocks. It costs a second call on the same
+clip, and every consumer in this repo uses the boundary path. If the Path A seam is ever exercised
+for real, run that path first.
 
 ## Constraints that bite here
 
@@ -137,6 +157,9 @@ bands, the anti-clustering instruction, `moment_reason` as evidence) and a user 
 the numbered boundary list (D-010) or the free-segmentation instruction. `PROMPT_VERSION` is the
 handle the A/B writeup quotes.
 
-**To finish this task:** put a working key in `.env` and run
-`uv run pytest tests/test_gemini.py -m slow --log-cli-level=INFO`. That one command settles every
-`[~]` above and produces the token number D-021 is missing.
+**Live verification (2026-07-26, after the owner supplied a free-tier key):**
+`uv run pytest tests/test_gemini.py -m slow --log-cli-level=INFO` — **1 passed**. Four live runs
+total across the session: one on `p1`, one dumping `p1`'s full output for inspection, one on `p2`,
+one final green gate. `PROMPT_VERSION` is now **`p2`**; D-024 holds the p1/p2 comparison table, and
+the `p1` text is recoverable from git history if the writeup needs to quote what produced the
+clustered numbers.
