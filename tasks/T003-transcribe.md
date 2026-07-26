@@ -1,6 +1,6 @@
 # T003 — `transcribe.py`: WhisperX word-level transcription
 
-**Status:** `not_started`
+**Status:** `done` (2026-07-26) — settings and measurements in `state/decisions-log.md` **D-015**
 
 ## Goal
 
@@ -28,20 +28,25 @@ index exists to enable downstream: precise cuts and filler removal.
 
 ## Acceptance criteria
 
-- [ ] `transcribe("in.mp4")` returns words with per-word `t` and `d`, not segment-level spans.
-- [ ] Output is chronological and covers the whole audio track.
-- [ ] A video with **no audio track** returns `[]` rather than raising.
-- [ ] `words_in_range()` is **half-open on the right** (`t_start <= w.t < t_end`), so a word
+- [x] `transcribe("in.mp4")` returns words with per-word `t` and `d`, not segment-level spans.
+      1436 words, mean duration 0.18s, max 2.02s.
+- [x] Output is chronological and covers the whole audio track. First word `t=0.928`, last
+      `t=427.017` on a 428s clip; sorted explicitly, not trusted from WhisperX.
+- [x] A video with **no audio track** returns `[]` rather than raising. Checked up front with
+      `ffprobe -select_streams a:0`, so WhisperX is never loaded.
+- [x] `words_in_range()` is **half-open on the right** (`t_start <= w.t < t_end`), so a word
       landing exactly on a cut belongs to exactly one shot — never both, never neither.
-- [ ] `words_in_range()` returns `[]` for a silent range, and the joined transcript for such a
+- [x] `words_in_range()` returns `[]` for a silent range, and the joined transcript for such a
       shot is `""` (empty string, not `None` — the schema requires a string).
-- [ ] Unit tests for `words_in_range()` cover: boundary word at `t == t_start` (included),
+- [x] Unit tests for `words_in_range()` cover: boundary word at `t == t_start` (included),
       boundary word at `t == t_end` (excluded), empty range, and empty word list. These need no
       audio fixture.
-- [ ] Model size / compute type / language settings are recorded, so Path A can match (D-002).
-- [ ] Stage timing is reported — this is expected to be the slowest stage and the biggest single
-      chunk of the <5 min budget.
-- [ ] Raises `FileNotFoundError` with the path when the file doesn't exist.
+- [x] Model size / compute type / language settings are recorded, so Path A can match (D-002).
+      Module constants + `pick_device()`, pinned in **D-015**, guarded by a test.
+- [x] Stage timing is reported — logged at INFO with device / model / compute type on the same
+      line. **102.7s** warm (ASR 49.5s + align 53.2s) on the 428s clip; ~34% of the <5 min
+      budget, so not a blocker.
+- [x] Raises `FileNotFoundError` with the path when the file doesn't exist.
 
 ## Constraints that bite here
 

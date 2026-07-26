@@ -1,85 +1,76 @@
-# T010 — Schema-sync checkpoint with the co-founder
+# T010 — Schema-sync checkpoint
 
-**Status:** `not_started` — **do this early, not last**
+**Status:** `done` (2026-07-26) — resolved as a **self-lock**, not a sync. See `state/decisions-log.md` **D-016**.
+
+> **This task was rewritten mid-project.** It was authored as *"a conversation with the
+> co-founder — not a solo call, that's the whole point."* On 2026-07-26 the owner confirmed the
+> repo is **solo**: there is no Path A counterparty. With nobody to sync with, the task's real
+> content is the decisions themselves, made by the owner and logged with reasoning. The original
+> framing is kept below for the record.
 
 ## Goal
 
+Lock the `footage_index.json` contract so T006/T007 stop building on unconfirmed assumptions.
+
+`docs/IDEA.md` on the contract: *"Lock it before either of us codes further."* That still holds
+with one person — the cost of a late schema change is the same whether it was one repo or two.
+
+## Outcome
+
+| Decision | Resolution | Where |
+|---|---|---|
+| D-001 — full index vs top-N | **Full index + `is_candidate`**. Top-N is a view, not a format; the discarded shots are what downstream questions need. | log only, no code change — the scaffold already implemented it |
+| D-002 — shared vs vendored | **Moot.** Vendored, settings pinned in code and guarded by tests: `ContentDetector`/`27.0` (D-012), `base`/`int8`/`cpu`/`en` (D-015). | `scenes.py`, `transcribe.py` |
+| D-013 — `index_meta` records the detector | **Shipped.** `scene_detector` + `scene_threshold`, required, no defaults. | `models.py`, `footage_index.schema.json`, `tests/test_schema.py` |
+| D-016 — governance | New entry: no counterparty, decisions owner-locked, reversal condition recorded. | `state/decisions-log.md` |
+
+D-010 (does `understand()` see the shot list) was settled the same day — option 2, boundaries in
+the prompt text — but it was never a cross-repo question and belongs to T004.
+
+## Acceptance criteria
+
+- [x] All open contract decisions resolved and logged in `state/decisions-log.md` with date and
+      reasoning — **not** just a verbal "yeah sounds good."
+- [x] `open_decisions` in `state/progress.json` is emptied of the resolved ids.
+- [x] The A/B test video is identified and accessible. `in.mp4`, D-003 — resolved earlier.
+- [x] Detector/threshold and WhisperX settings are agreed and written down. D-012, D-015, as
+      module constants with tests asserting them.
+- [ ] ~~`footage_index.schema.json` compared field-for-field against what Path A emits~~ — **N/A,
+      no Path A exists.** The closest available substitute now runs instead:
+      `tests/test_schema.py` asserts field parity between the two *local* artifacts, and the
+      `index_meta` block was added to that check while landing D-013 (it had been missing).
+- [ ] ~~If Path A's entrypoint differs from `python -m elvideo index in.mp4`, log it~~ — **N/A.**
+
+## What stays true without a counterparty
+
+- **The schema keeps its A/B shape.** `path_variant: "gemini" | "local"`, nullable
+  `editorial_score` / `moment_reason`. Free to keep, expensive to re-add. Do not "simplify" these
+  away on the grounds that only one path exists — that's a one-way door (D-016).
+- **Settings stay pinned.** Reproducibility was the real requirement; a second reader was only
+  the motivation.
+- **Schema changes still get logged.** Cheap discipline, and the next reader is you in a month.
+
+## Open follow-up for the owner
+
+`.claude/CLAUDE.md` hard constraint 6 and `docs/IDEA.md` both describe the co-founder repo as a
+**live** manual-sync risk. That is now aspirational. Deliberately **not** edited — CLAUDE.md's own
+rule is to log conflicts rather than silently pick a side. Decide whether to soften constraint 6
+or leave it as intended future state. Logged in D-016.
+
+---
+
+## Original framing (superseded, kept for the record)
+
 Resolve the three open decisions from `docs/IDEA.md` § *Open decisions to confirm*, and confirm
 the `footage_index.json` shape against what Path A actually emits.
-
-Numbered last, but **it should happen first** — or at least before T009. `docs/IDEA.md` says of
-the contract: *"Lock it before either of us codes further."* Every day this stays open, both
-repos code further against an unconfirmed shape.
-
-## Reads / depends on
-
-- `docs/IDEA.md` § *Open decisions to confirm*, § *Shared contract*
-- `docs/schema.md` § *Open decisions affecting this contract*
-- `state/decisions-log.md` — D-001, D-002, D-003
-- Tasks: blocks T009. Overlaps T006.
-
-## Inputs / outputs
 
 **In:** a conversation with the co-founder. Not a solo call — that's the whole point.
 **Out:** three resolved entries in `state/decisions-log.md`, each with the decision, the date,
 and the reasoning.
 
-## The three decisions
-
-### D-001 — Output shape: full index vs top-N
-
-Full index + `is_candidate` flag (what the doc assumes and the scaffold implements), or a
-separate top-N moments list?
-
-Full index keeps both paths schema-identical, and "best moments" becomes a filter rather than a
-format. **Recommend confirming the assumption.** Needs a yes, not a guess — T006 and T007 both
-build on it.
-
-### D-002 — Shared vs vendored PySceneDetect + WhisperX
-
-One shared module, or each path vendors its own?
-
-`docs/IDEA.md` recommends **shared**, to isolate the experimental variable to Understanding only.
-If vendored, shot boundaries and transcripts may differ between paths and the diff stops being
-clean — a caption difference could then be caused by a threshold difference, and the A/B answers
-nothing.
-
-Whatever's chosen, the concrete settings must match: detector type and threshold (T002), model
-size, compute type, device (T003).
-
-### D-003 — The A/B test video
-
-One agreed ~10-min clip both paths run on, checked into the repo or on a shared drive link.
-
-**Pick it before coding further** so "done" is comparable. Blocks T009 entirely. Criteria worth
-agreeing: ~10 min, representative footage (SMB b-roll, not a stock demo reel), has speech (or
-`words[]` is untested), has real cuts (or shot detection is untested), and is legally shareable
-if it ends up in a hackathon writeup.
-
-## Acceptance criteria
-
-- [ ] All three decisions resolved and logged in `state/decisions-log.md` with date and
-      reasoning — **not** just a verbal "yeah sounds good."
-- [ ] `open_decisions` in `state/progress.json` is emptied of the resolved ids.
-- [ ] The A/B test video is identified and accessible to both sides.
-- [ ] `footage_index.schema.json` is compared field-for-field against what Path A emits, and any
-      divergence is either fixed or logged.
-- [ ] Detector/threshold and WhisperX settings are agreed and written down in both repos.
-- [ ] If Path A's entrypoint command differs from `python -m elvideo index in.mp4`, that's
-      logged too — the invocation is part of the contract.
-
-## Constraints that bite here
-
-- **The schema is a two-repo change surface with no automated sync.** This task is the manual
-  sync. Skipping it doesn't make the risk go away, it just makes it show up later, in the merge.
-- The A/B only means something if the *only* difference between the two runs is Understanding.
-  Every unresolved decision here is a second variable.
-
-## Notes
-
-`docs/IDEA.md`'s own framing: this is *"a 10-minute message with the co-founder, not a solo
-call."* Resolving these alone defeats the purpose — an assumption confirmed by yourself is still
-an assumption.
-
 Cheapest possible version: send the schema file and the three questions in one message, get one
 reply, log it. That's it. It does not need a meeting.
+
+**Constraint that bit here:** *"The schema is a two-repo change surface with no automated sync.
+This task is the manual sync."* With one repo, the surface is one-sided — but the discipline of
+writing the decision down survives the reason for it.

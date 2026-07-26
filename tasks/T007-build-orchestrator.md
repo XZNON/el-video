@@ -33,12 +33,20 @@ Also owns `align_understanding(shots, understanding) -> list[Shot]`.
 - [ ] Alignment survives a length mismatch: the model returning 40 segments for 120 detected
       shots must not crash, drop shots, or shift the mapping. Unmatched shots keep their
       defaults (`caption=""`, `editorial_score=None`).
+- [ ] **D-010 is resolved (option 2): alignment is an index lookup on `shot_index`, not an
+      overlap match.** A `shot_index` outside the real range fails loudly — it means the model
+      ignored the boundaries it was given, and silently dropping it yields captions on the wrong
+      shots with no error anywhere.
 - [ ] Every detected shot appears in the output — **full index, not top-N** (D-001).
 - [ ] `is_candidate` is derived from `editorial_score`, with the threshold documented and
       recorded, not a magic number buried in a comparison.
 - [ ] `transcript` is `words_in_range()` joined; silent shots get `""`, not `None`.
 - [ ] `index_meta` records what **actually ran** — the real `sample_fps` and `media_resolution`
       used for this run, not the defaults. `path_variant` is `"gemini"`.
+- [ ] `index_meta.scene_detector` / `.scene_threshold` carry the values **actually passed to
+      `detect_shots()`** (D-013). Both are required with no schema default, so an index that
+      doesn't set them fails `validate_index()` — read them off the call, don't re-read the
+      module constants.
 - [ ] Output validates via `validate_index()` **before** it is written. A validation failure
       leaves no partial file behind.
 - [ ] **Per-stage timing logged** — one line per stage plus a total. "Total: 4m12s" alone fails

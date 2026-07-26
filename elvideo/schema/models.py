@@ -92,6 +92,21 @@ class IndexMeta(_Strict):
             "knob, so record the value actually used."
         ),
     )
+    scene_detector: str = Field(
+        min_length=1,
+        description=(
+            "PySceneDetect detector that cut the shots, e.g. 'ContentDetector'. Shot boundaries "
+            "are the spine the whole index hangs off, so how they were cut is provenance, not "
+            "trivia. See decisions-log D-013."
+        ),
+    )
+    scene_threshold: float = Field(
+        gt=0,
+        description=(
+            "Detector threshold actually used, e.g. 27.0. A per-video knob like sample_fps — "
+            "two indexes can disagree on shot count for this reason alone."
+        ),
+    )
 
 
 class Word(_Strict):

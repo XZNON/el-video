@@ -16,7 +16,7 @@ import pytest
 from jsonschema.validators import validator_for
 
 from elvideo.schema import SCHEMA_PATH
-from elvideo.schema.models import FootageIndex, Shot, VideoMeta, Word
+from elvideo.schema.models import FootageIndex, IndexMeta, Shot, VideoMeta, Word
 
 
 @pytest.fixture(scope="module")
@@ -49,6 +49,7 @@ def test_top_level_keys_match_pydantic(schema: dict[str, Any]) -> None:
     ("pointer", "model"),
     [
         ("video", VideoMeta),
+        ("index_meta", IndexMeta),
         ("shots", Shot),
         ("words", Word),
     ],
@@ -73,3 +74,14 @@ def test_path_variant_is_the_ab_discriminator(schema: dict[str, Any]) -> None:
     """Both A/B paths must be expressible in the same contract."""
     variants = schema["properties"]["index_meta"]["properties"]["path_variant"]["enum"]
     assert set(variants) == {"gemini", "local"}
+
+
+def test_index_meta_records_how_shots_were_cut(schema: dict[str, Any]) -> None:
+    """D-013: shot boundaries are the index's spine, so the detector settings are provenance.
+
+    Both fields are required, with no default — ``index_meta`` must reflect what actually ran.
+    """
+    required = schema["properties"]["index_meta"]["required"]
+    assert {"scene_detector", "scene_threshold"} <= set(required)
+    for name in ("scene_detector", "scene_threshold"):
+        assert IndexMeta.model_fields[name].is_required(), f"{name} must not have a default"

@@ -1,16 +1,14 @@
 {
   "current_task": null,
   "status": "task_complete",
-  "completed_tasks": ["T001", "T002"],
-  "blockers": [
-    "T010: D-001 (full-index vs top-N) and D-002 (shared vs vendored detect/transcribe settings) need co-founder confirmation before T006/T007 lock the schema"
-  ],
+  "completed_tasks": ["T001", "T002", "T003", "T010"],
+  "blockers": [],
   "env": {
     "deps_installed": true,
     "python": "3.12",
     "torch": "2.8.0",
     "whisperx": "3.8.6",
-    "gates": "pytest 18 passed, ruff clean, mypy strict clean"
+    "gates": "pytest 35 passed (-m 'not slow') + 1 slow passed in 104s, ruff clean, mypy strict clean"
   },
   "test_video": {
     "path": "in.mp4",
@@ -22,11 +20,24 @@
     "shots_at_threshold_27": 117,
     "note": "gitignored; both A/B paths hold the same file. See decisions-log D-003."
   },
-  "open_decisions": [
-    "full-index-vs-topN",
-    "shared-vs-vendored-detect",
-    "understand-sees-shot-list",
-    "index-meta-records-detector"
-  ],
-  "last_updated": "2026-07-25T14:45:00Z"
+  "open_decisions": [],
+  "resolved_2026_07_26": {
+    "D-001": "full index + is_candidate",
+    "D-002": "vendored; settings pinned in D-012 + D-015",
+    "D-010": "understand() gets shot boundaries in the prompt text (option 2)",
+    "D-013": "index_meta gains scene_detector + scene_threshold (shipped)",
+    "D-015": "WhisperX base / int8 / cpu / en",
+    "D-016": "solo repo, no Path A counterparty; decisions owner-locked"
+  },
+  "owner_follow_up": "CLAUDE.md hard constraint 6 and docs/IDEA.md still describe the co-founder repo as a live sync risk. Now aspirational. Left unedited on purpose - see D-016.",
+  "transcription": {
+    "words_on_test_video": 1436,
+    "wall_clock_s_warm": 102.7,
+    "asr_s": 49.5,
+    "align_s": 53.2,
+    "device": "cpu",
+    "note": "first run 202.5s - 360MB wav2vec2 checkpoint download, cached after. See D-015."
+  },
+  "next_task": "T005 - quality.py (OpenCV Laplacian + exposure). Prompt: prompts/session-start/003-quality.md",
+  "last_updated": "2026-07-26T16:15:00Z"
 }

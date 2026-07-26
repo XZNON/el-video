@@ -51,5 +51,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "slow: real-model integration runs (minutes on CPU); deselect with -m 'not slow'",
+]
 # The project is not installed as a package; make `import elvideo` resolve from the repo root.
 pythonpath = ["."]

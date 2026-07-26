@@ -10,7 +10,7 @@ Format: id, status, the decision, the reasoning, the date.
 
 ## D-001 — Output shape: full index vs top-N
 
-**Status:** `unresolved` · **Owner:** needs the co-founder · **Blocks:** T006, T007 · **Resolved in:** T010
+**Status:** `resolved` — **full index + `is_candidate` flag** · **Date:** 2026-07-26 · **Unblocks:** T006, T007
 
 Emit every shot with an `is_candidate` flag, or emit a separate top-N "best moments" list?
 
@@ -18,14 +18,22 @@ Emit every shot with an `is_candidate` flag, or emit a separate top-N "best mome
 `filter(is_candidate)` / `sort(editorial_score)`, and both paths stay schema-identical. The
 scaffold implements that assumption.
 
-**What resolving it requires:** a yes from the co-founder. This is a 10-minute message, not a
-solo call — an assumption confirmed by yourself is still an assumption.
+**Decision: keep the full index.** Owner-locked rather than co-founder-confirmed — see **D-016**;
+there is no second repo to get a yes from.
+
+**Why it stands on its own merits, independent of who signs it off:** a top-N list throws away
+data the index was built to hold. Every downstream question — "what else was in this scene",
+"give me a B-roll cutaway near 4:10", "why was this rejected" — needs the shots that *didn't*
+make the cut. "Best moments" is a view over the index, not a different artifact, and a view costs
+nothing to compute. Going top-N would also reopen D-005 (the single staged `Shot` type).
+
+**Revisit if:** output size becomes a real problem. It won't at 117 shots.
 
 ---
 
 ## D-002 — Shared vs vendored PySceneDetect + WhisperX
 
-**Status:** `unresolved` · **Owner:** needs the co-founder · **Affects:** T002, T003 · **Resolved in:** T010
+**Status:** `resolved` — **vendored in practice, settings pinned and published** · **Date:** 2026-07-26 · **Affects:** T002, T003
 
 One shared module for shot detection and transcription, or each path vendors its own?
 
@@ -33,9 +41,21 @@ One shared module for shot detection and transcription, or each path vendors its
 If vendored, shot boundaries and transcripts can differ between paths — and then a caption
 difference might be caused by a detector threshold, so the A/B answers nothing.
 
-**What resolving it requires:** agreement plus the *concrete settings* written into both repos —
-detector type and threshold (T002); WhisperX model size, compute type, device (T003). "We'll both
-use PySceneDetect" is not enough resolution to make the diff clean.
+**Decision:** the question as posed is moot — there is no second repo to share *with* (**D-016**).
+This repo vendors both stages, and what survives of the requirement is the half that actually
+does the work: **the concrete settings are pinned in code, exposed as module constants, and
+guarded by tests.**
+
+| Stage | Pinned in | Settings |
+|---|---|---|
+| Shot detection | `elvideo/index/scenes.py` | `ContentDetector`, threshold `27.0` (**D-012**) |
+| Transcription | `elvideo/index/transcribe.py` | `base` / `int8` / `cpu` / `en` (**D-015**) |
+
+From T007 the detector settings also land *in the artifact itself* via `index_meta`
+(**D-013**), so a `footage_index.json` explains its own shot count without reference to this log.
+
+**If Path A ever becomes real:** this is the entry it has to match. Nothing here changes; the
+requirement just gains a counterparty.
 
 ---
 
@@ -216,7 +236,7 @@ and a caption difference in the A/B could just be a dial difference. See D-002.
 
 ## D-013 — `index_meta` does not record how the shots were cut
 
-**Status:** `unresolved` · **Affects:** T006, T007 · **Cross-repo:** schema change, needs the co-founder
+**Status:** `resolved` — **shipped** · **Date:** 2026-07-26 · **Affects:** T006, T007
 
 `index_meta` currently captures `path_variant`, `model`, `media_resolution`, `sample_fps` — every
 setting that changes the *understanding* output. It captures **nothing** about shot detection.
@@ -238,7 +258,21 @@ it records the easy half.
 **Argument against:** every field added is another thing both repos must agree on, and the values
 could equally live in the session log rather than the artifact.
 
-**Resolve during T006**, alongside D-001, before the schema is locked.
+**Decision: add both fields.** `scene_detector: str` and `scene_threshold: float`, required, no
+defaults — `index_meta` records what *ran*, not what the constants say. The argument against was
+mostly cross-repo agreement cost, and D-016 removes that. The session-log alternative fails the
+actual use case: the artifact has to be readable on its own, by a downstream agent that never
+sees this repo.
+
+**Landed in all four places, in lockstep:**
+
+- `elvideo/schema/models.py` — `IndexMeta.scene_detector` / `.scene_threshold`
+- `elvideo/schema/footage_index.schema.json` — same two, both in `required`
+- `tests/test_schema.py` — `test_index_meta_records_how_shots_were_cut`, plus `index_meta` added
+  to the field-parity parametrize, which had been **missing** the block entirely (so a one-sided
+  edit to `index_meta` would not have been caught before now)
+- **T007 must populate them** from `scenes.DEFAULT_DETECTOR` / the threshold actually passed —
+  the schema now rejects an index without them.
 
 ---
 
@@ -263,9 +297,54 @@ count × fps instead. `words[]` may also legitimately end after the last shot's 
 
 ---
 
-## D-010 — Does `understand()` see the shot list? (open design question)
+## D-015 — WhisperX settings: `base` / `int8` / `cpu` / `en`
 
-**Status:** `unresolved` · **Owner:** whoever does T004 · **Affects:** T004, T007
+**Status:** `resolved` for this repo · **Date:** 2026-07-26 · **Feeds:** T003 · **Cross-repo:** must be matched by Path A (D-002)
+
+D-002 says "we'll both use WhisperX" is not enough resolution. These are the concrete settings,
+now encoded as module constants in `elvideo/index/transcribe.py` and guarded by a test:
+
+| | |
+|---|---|
+| Model size | **base** |
+| Compute type | **int8** on CPU (`float16` if a CUDA box is ever used) |
+| Language | **en**, pinned — not auto-detected |
+| Device | **cpu** — torch here is `2.8.0+cpu`, `torch.cuda.is_available()` is `False` |
+| Batch size | 16 (throughput only, does not change output) |
+| Alignment model | torchaudio `WAV2VEC2_ASR_BASE_960H`, WhisperX's default for `en` |
+
+Measured on `in.mp4` (428s, D-003), second run with all models cached:
+
+| | |
+|---|---|
+| Words | **1436** |
+| Wall-clock | **102.7s** — ASR 49.5s + alignment 53.2s |
+| First / last word | `t=0.928` / `t=427.017` |
+| Mean word duration | 0.18s (max 2.02s) — word-level, not segment spans |
+| Dropped by `words_in_range` across all 117 shots | **0** |
+| Silent shots | 7 of 117 |
+
+**Why `base` and not `small`:** transcription plus the one Gemini call is the entire <5 min
+budget. At 103s, `base` spends about a third of it; `small` is roughly 2–3× slower on CPU and
+would leave no room. Revisit if a CUDA machine becomes the reference.
+
+**Why language is pinned rather than detected:** detection is a per-run guess, and a flip would
+silently swap the alignment model too — the two repos could then disagree for a reason nothing
+in the artifact records.
+
+**Cold-start caveat, not part of the budget:** the *first* run took 202.5s because it downloads
+the 360 MB wav2vec2 alignment checkpoint. Cached thereafter in `~/.cache/torch/hub`. Path A's
+first run pays the same toll; do not compare a cold number against a warm one.
+
+**Known environment noise:** `pyannote.audio` warns that `torchcodec` can't load its DLLs on this
+box. Harmless here — WhisperX decodes audio through ffmpeg, not torchcodec — but it prints a wall
+of text on every run.
+
+---
+
+## D-010 — Does `understand()` see the shot list?
+
+**Status:** `resolved` — **option 2, boundaries in the prompt text** · **Date:** 2026-07-26 · **Affects:** T004, T007
 
 `docs/IDEA.md` fixes `understand(path, fps, res) -> [ShotUnderstanding]` — no shot list
 parameter. So Gemini segments the video its own way, and `build.py` must align two lists that may
@@ -277,5 +356,58 @@ model describes our shots by index; alignment becomes trivial and captions get s
 almost nothing in tokens and doesn't change the signature — but couples the module to T002's
 output.
 
-**Leaning: option 2.** Decide it deliberately during T004 and record the outcome here rather than
-letting the implementation settle it by accident.
+**Decision: option 2.**
+
+**Why:** option 1's alignment is a fuzzy match between a 117-entry frame-accurate list and
+whatever Gemini decides the shots were, using timestamps the constraints already declare
+untrustworthy (second-granular, never used for `t_start`/`t_end`). That is a silent-failure
+surface in the middle of the pipeline: a mis-alignment yields a plausible-looking index with
+captions attached to the wrong shots, and nothing errors. Option 2 deletes the problem — the
+model returns `shot_index`, and `ShotUnderstanding.shot_index` already exists for exactly that.
+
+**Cost, accepted:** ~117 lines of `idx t_start-t_end` in the prompt, well under 2K tokens against
+a ~14K-token budget for this clip (D-003). Couples `gemini.py` to T002's output — but T007
+already couples them, so the dependency is real either way.
+
+**How it's threaded without changing the signature:** the boundaries reach `understand()` as an
+optional keyword argument with a `None` default, the same pattern `detect_shots(path, threshold=)`
+uses (D-012). `understand(path, fps, media_resolution)` stays literally callable as
+`docs/IDEA.md` writes it.
+
+**T007 consequence:** `align_understanding()` becomes an index lookup with a length check, not an
+overlap matcher. It must still fail loudly — a returned `shot_index` outside the real range is an
+error, not something to silently drop.
+
+---
+
+## D-016 — There is no Path A counterparty; contract decisions are owner-locked
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Scope:** governance — supersedes the "needs the co-founder" status on D-001, D-002, D-013
+
+Stated by the repo owner on 2026-07-26: **this is a solo repo.** There is no separate El-Video /
+Path A repo with a second person coding against `footage_index.json` today.
+
+Three decisions were parked as `unresolved · needs the co-founder`, and T010 was written as *"a
+10-minute message, not a solo call."* With no counterparty, waiting is not caution — it is a
+permanent block. The decisions are now made by the owner, on their merits, and logged with
+reasoning: D-001, D-002, D-013 above, and D-010 (never a cross-repo question) alongside them.
+
+**What this does NOT change:**
+
+- **The schema stays the shared contract in shape.** `path_variant: "gemini" | "local"` and the
+  nullable `editorial_score` / `moment_reason` stay exactly as they are. They cost nothing and
+  they are what makes a Path A possible later. Designing the A/B out of the schema now would be
+  a one-way door.
+- **Settings stay pinned and published** (D-012, D-015). Reproducibility was always the real
+  requirement; a second reader was only ever the motivation.
+- **Changes still get logged here.** The discipline is worth keeping on its own.
+
+**What it does change:** `.claude/CLAUDE.md` hard constraint 6 and `docs/IDEA.md` both describe
+the co-founder repo as a live counterparty and a manual-sync risk. That framing is now
+aspirational rather than current. Flagged here rather than silently edited, per CLAUDE.md's own
+instruction to log conflicts instead of picking one. **The owner should decide whether to soften
+constraint 6 or leave it as the intended future state.**
+
+**Reversal condition:** if a Path A repo does appear, D-001 / D-002 / D-013 become proposals
+again and must be re-confirmed against what it actually emits. The A/B claim in the writeup
+depends on that, and nothing in this repo can detect it automatically.

@@ -10,8 +10,11 @@ Path A: pydantic models for Python, and a JSON Schema for cross-repo validation.
 
 The bootstrap session already wrote `models.py`, `footage_index.schema.json`, and
 `tests/test_schema.py` — those are declarative, not pipeline logic, so they were seeded rather
-than stubbed. **What's left is the part that needs a second pair of eyes: confirming the shape
-with the co-founder, and implementing the validator.**
+than stubbed.
+
+**Status update 2026-07-26:** the shape is now **locked** — D-001 confirmed, D-013 shipped, and
+the co-founder sign-off criterion is N/A on a solo repo (D-016). **All that remains is
+`validate_index()`.**
 
 ## Reads / depends on
 
@@ -42,13 +45,15 @@ with the co-founder, and implementing the validator.**
 - [ ] A hand-written minimal valid document passes; a document with an extra top-level key fails
       (`additionalProperties: false` is deliberate); a document with `t_end < t_start` fails.
 - [ ] `Shot.id` pattern accommodates 100+ shots (`^shot_[0-9]{3,}$`, not exactly-3).
-- [ ] **D-001 resolved and logged** — full index + `is_candidate` (assumed) vs separate top-N.
-- [ ] **D-013 resolved and logged** — whether `index_meta` gains `scene_detector` and
-      `scene_threshold`. Today the contract records every setting that shapes the *understanding*
-      output and none that shapes the *shot boundaries*, so two indexes can disagree on shot
-      count with nothing in either file explaining why.
-- [ ] The schema file is shared with the co-founder and confirmed against what Path A emits. Any
-      divergence is logged in `state/decisions-log.md`, not patched over.
+- [x] **D-001 resolved and logged** (2026-07-26) — full index + `is_candidate`. No code change;
+      the scaffold already implemented the assumption.
+- [x] **D-013 resolved and logged** (2026-07-26) — **shipped.** `index_meta` gained
+      `scene_detector` and `scene_threshold`, both required with no defaults, in `models.py` and
+      `footage_index.schema.json`. `tests/test_schema.py` gained a guard, and `index_meta` was
+      added to the field-parity parametrize, which had been missing the block.
+- [ ] ~~The schema file is shared with the co-founder and confirmed against what Path A emits~~ —
+      **N/A, solo repo (D-016).** The remaining check is local: the two artifacts agree
+      field-for-field, which `test_block_fields_match_pydantic` now covers for all four blocks.
 - [ ] `uv run pytest tests/test_schema.py` passes clean.
 
 ## Constraints that bite here

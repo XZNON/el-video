@@ -60,23 +60,26 @@ The video is uploaded to the **Gemini File API**, which holds it 48h free. We do
 - **Gemini's timestamps are second-granular and never become `t_start` / `t_end`.** They may be
   returned as `t_start_hint` / `t_end_hint` for alignment only.
 
-## Open question to resolve while doing this
+## Settled before starting: D-010 — the model is told our shot boundaries
 
-`understand()`'s signature (fixed by `docs/IDEA.md` § *Module layout*) does **not** take the
-PySceneDetect shot list. So the model segments the video its own way, and T007 has to align two
-lists that may differ in length.
+**Resolved 2026-07-26, option 2.** `state/decisions-log.md` **D-010**. Not an open question any
+more; implement it this way.
 
-Two options, and this task should settle it and log the answer in `state/decisions-log.md`:
+The PySceneDetect boundaries go into the **prompt text** as a numbered list, and the model returns
+`shot_index` against it. Alignment in T007 becomes an index lookup instead of a fuzzy overlap
+match against timestamps the constraints already declare untrustworthy.
 
-1. **Keep the signature.** Model segments freely; `align_understanding()` matches on temporal
-   overlap using the hints. Preserves the seam with Path A exactly.
-2. **Pass the boundaries into the prompt** (as text, not as a signature change) so the model
-   describes *our* shots by index. Alignment becomes trivial and captions get sharper, but it
-   couples this module to T002's output.
+- Boundaries arrive as an **optional keyword argument defaulting to `None`**, mirroring
+  `detect_shots(path, threshold=)` (D-012). `understand(path, fps, media_resolution)` stays
+  literally callable as `docs/IDEA.md` § *Module layout* writes it.
+- Cost: ~117 lines of `idx t_start-t_end`, under 2K tokens against this clip's ~14K budget
+  (D-003).
+- With `None`, the model segments freely and returns hints — keep that path working, it's the
+  fallback and the thing that makes the seam real.
 
-Option 2 is likely better for output quality and costs almost nothing in tokens. It does not
-change the function signature, so the seam survives — but it does mean `understand()` needs the
-shot list from somewhere. Decide deliberately; don't let it happen by accident.
+Add to the acceptance criteria above: **the returned `shot_index` values must be validated
+against the real shot count and fail loudly out of range** — a silent drop here produces an index
+with captions on the wrong shots and no error anywhere.
 
 ## Notes
 

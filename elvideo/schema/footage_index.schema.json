@@ -43,7 +43,14 @@
     "index_meta": {
       "type": "object",
       "description": "How this index was produced. Must reflect what actually ran, not the defaults - this is what makes two indexes of the same footage comparable.",
-      "required": ["path_variant", "model", "media_resolution", "sample_fps"],
+      "required": [
+        "path_variant",
+        "model",
+        "media_resolution",
+        "sample_fps",
+        "scene_detector",
+        "scene_threshold"
+      ],
       "additionalProperties": false,
       "properties": {
         "path_variant": {
@@ -62,6 +69,16 @@
         "sample_fps": {
           "type": "number",
           "description": "Frames per second fed to the understanding model. Path B default 0.5; per-video knob, record the value actually used.",
+          "exclusiveMinimum": 0
+        },
+        "scene_detector": {
+          "type": "string",
+          "description": "PySceneDetect detector that cut the shots, e.g. 'ContentDetector'. Shot boundaries are the spine the index hangs off, so how they were cut is provenance. See decisions-log D-013.",
+          "minLength": 1
+        },
+        "scene_threshold": {
+          "type": "number",
+          "description": "Detector threshold actually used, e.g. 27.0. A per-video knob like sample_fps - two indexes can disagree on shot count for this reason alone.",
           "exclusiveMinimum": 0
         }
       }
