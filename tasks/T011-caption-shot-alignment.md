@@ -1,10 +1,13 @@
 # T011 — Gemini judgments attach to the wrong `shot_index`
 
-**Status:** `partial` — **stays open by its own criterion 2**
+**Status:** `partial` — **CLOSED by design on 2026-07-27 (D-032). `partial` is its final state.**
 
 A measured improvement (2/17 → 6–13/17) that does not reach ≥12/17 reliably. Criterion 2 says in
-as many words that a smaller improvement "does not close this task", so this is not `done`. What
-was delivered, and what is left, is in **Outcome** at the bottom.
+as many words that a smaller improvement "does not close this task", so this is not `done` and it
+does **not** enter `completed_tasks`. It is closed anyway, because every lever inside its scope has
+been pulled and measured and the remaining idea changes `shots[]` itself — that is
+**[T012](T012-coarser-intervals.md)**, not this. What was delivered, what fails, and why closing is
+the right call is in the three **Outcome** sections at the bottom.
 
 ## Goal
 
@@ -44,10 +47,10 @@ new field, that is a contract change and goes to `state/decisions-log.md` first 
       sampled from `in.mp4` by a fixed rule (not hand-picked), each scored match / partial /
       mismatch against its keyframe, with the sample list committed so a later run compares like
       with like. The T009 baseline for this measure is **2 match / 2 partial / 13 mismatch of 17**.
-- [ ] **FAILED.** Agreement after the fix is **≥ 12 of 17 clean matches** on that same sample — i.e. the
+- [ ] **FAILED — mean 10.7/17 over 3 runs at the best setting.** Agreement after the fix is **≥ 12 of 17 clean matches** on that same sample — i.e. the
       failure is the exception, not the rule. A smaller improvement is a legitimate result to
       record, but it does not close this task.
-- [ ] **FAILED.** The three shots named in `docs/run-report.md` as unambiguous failures — `shot_059`
+- [ ] **FAILED — 1 of 3 met (`shot_005`).** The three shots named in `docs/run-report.md` as unambiguous failures — `shot_059`
       (top-scored 0.85, captioned "three men in the back seat", frame shows an empty boot),
       `shot_105` (captioned "presenter exits", frame is a parked car with no presenter), and
       `shot_005` (captioned "walks around the front", frame is a static front-on car) — each either
@@ -57,12 +60,12 @@ new field, that is a contract change and goes to `state/decisions-log.md` first 
 - [x] Token cost after the fix is recorded against the **38,956** baseline. A rise is acceptable if
       it is stated; the free-tier ceiling to stay under is the 250K/min TPM cap, not the old ~30K
       estimate (D-025).
-- [~] **PARTIAL.** `understand()` **detects** a bad mapping rather than trusting it: at minimum, every returned
+- [x] **CLOSED — not achievable this way (session 009).** `understand()` **detects** a bad mapping rather than trusting it: at minimum, every returned
       `shot_index` is in `[0, len(shots))`, appears at most once, and the response covers every
       shot — with a named exception raised on violation, not a silent pass. (Note whether the
       current run already satisfies this; if it does, index validity was never the failure and the
       check is a regression guard, not the fix.)
-- [x] *(n/a)* If `fps` is raised as part of the fix, the new default is justified with the measured
+- [x] **MET (session 009) — measured at both values, default unchanged, D-030.** If `fps` is raised as part of the fix, the new default is justified with the measured
       agreement rate *and* the token cost at both values, and the change is logged as a decision —
       `fps` is a per-video knob and its default is a pinned setting (hard constraint 2, D-019).
 - [x] `uv run pytest`, `uv run ruff check .`, `uv run mypy elvideo` all clean.
@@ -152,3 +155,99 @@ still untested.** It costs roughly +14K tokens per run and is one flag. Given fi
 
 `shot_059` is the shot to watch: it has never matched its frame under any prompt, though `p3` at
 least stopped inventing three passengers and dropped it out of the top score.
+
+---
+
+## Outcome — 2026-07-26 (session 009): `fps` measured, hypothesis 2 rejected
+
+**The lever left undone above was pulled, and it does not work.** D-027 is now `resolved`: both of
+its hypotheses have been measured, one supported and one rejected. T011 stays `partial` — criterion
+2 still fails — but it now fails against a *bounded* ceiling rather than an open question.
+
+| `fps` | Clean matches /17 (3 runs) | Mean | Tokens (mean) | Score spread |
+|---|---|---:|---:|---|
+| **0.5** | 13, 6, 13 | **10.7** | **42,553** | clustering warning never fired |
+| 1.0 | 9, 8, 9 | 8.7 | 55,500 (+30%) | warning fired on 2 of 3 |
+
+**Frame starvation was not the cause.** Doubling sampled frames (~1.8 → ~3.7 per shot) bought
+nothing on attribution, cost 30% more tokens, and flattened the editorial scoring it was not meant
+to touch. `fps` default stays 0.5 — **D-030**, which closes criterion 7 with numbers at both values.
+
+**Two findings worth more than the negative result:**
+
+1. **`seed=7` is exactly reproducible.** Session 009's `fps=0.5` run reproduced session 008's run 1
+   **bit-identically** — 117 captions, 117 scores, 42,764 tokens, even the grader's 7,721. So the
+   6/17 replicate was a *second deterministic outcome*, not noise around a mean. Repeated runs
+   sample a small discrete set of outcomes; they do not average away jitter. The practical rule
+   ("2–3 runs per configuration") survives, its justification changes.
+2. **The free tier's binding limit is 20 requests/day/model**, not the 250K TPM cap this repo has
+   budgeted against — **D-031**. Run 5 was refused by it. Grading calls come from the same pool, so
+   a *measured* index run costs 2 requests. Plan sessions in requests, not tokens.
+
+**Criterion 6 is closed as *not achievable this way*.** The validity checks pass on every run
+including the 6/17 one; `hint_drift()` reports 0–1 of 117 on runs that are half wrong. No detector
+exists inside `understand()` that does not look at frames, and looking at frames is a second model
+call — outside it by hard constraint 1. The grading harness is that detector, correctly kept as a
+separate consumer.
+
+**Criterion 3 is 1 of 3 met:** `shot_005` matches on all six `p3` runs. `shot_105` matches 2 of 6.
+`shot_059` matches **0 of 6** — though at `fps=1.0` the grader twice softened it to *partial*
+("presenter is gesturing, not pushing down on the seats"): right place, right person, wrong action.
+
+**Gates:** 211 fast tests, ruff clean, mypy strict clean. The slow test's score-range assertion was
+lowered 0.3 → 0.2 on six measured runs (D-030) — at 0.3 it failed 4 of 6, and it never caught `p1`
+anyway, whose range was 0.65.
+
+**The only untested class of fix left, and it is not a prompt change:** ask a different question.
+Merge adjacent sub-2s shots before the call so the model chooses among ~60 distinguishable
+intervals instead of 117 near-identical ones. `--threshold` is the cheap way to try it. It changes
+`shots[]` itself, so it is a product decision — `/new-task` it rather than folding it in here.
+
+---
+
+## Outcome — 2026-07-27 (session 010): closed as `partial` by design, zero live requests
+
+**No new measurement was taken, deliberately.** Session 010 had two legitimate moves — change what
+is asked (raise `--threshold`, ~60 coarser intervals) or accept the measured ceiling and write it
+up. **The second was chosen** and recorded as **D-032**.
+
+**Why this task closes without passing.** Everything inside its scope has been pulled and measured:
+
+| Lever | Result |
+|---|---|
+| Prompt anchored on timestamps (`p2` → `p3`) | 2/17 → **mean 10.7/17** |
+| Prompt tuned for score spread (`p4`) | alignment collapsed to 4/17 — reverted |
+| Frame budget (`fps` 0.5 → 1.0) | **worse** — 8.7/17 at **+30% tokens** |
+| Model self-report (`hint_drift()`) | 0–1 of 117 on runs two-thirds wrong |
+| Validity checks in `understand()` | pass on every run, including the 6/17 one |
+
+What is left is outside reach: a bigger model is pinned out (hard constraint 3), per-shot calls are
+the design this project exists to avoid (hard constraint 1), and the only untested idea changes
+`shots[]` itself. **Another prompt variant would spend the binding resource — requests, 20/day
+(D-031) — to reproduce a number already known to three significant figures.**
+
+**Final measured position:** `gemini-3.5-flash` attributing a moment to one of 117 sub-3-second
+intervals across a 7-minute clip is **~60% reliable — 58 of 102 graded pairs clean over six `p3`
+runs** (32/51 at `fps=0.5`, 26/51 at `fps=1.0`). Criteria 2 and 3 stand as **FAIL**; criterion 6
+stands as **closed, not achievable this way**; the other six pass.
+
+**What session 010 produced instead of a seventh run:** `docs/run-report.md` § *T011 closed —
+partial by design* — a **what a consumer may / may not trust** split field by field, a numbered
+known-limitations list written for whoever builds the downstream agent, and the A/B claim stated as
+two halves rather than one verdict:
+
+> **The claim that survives is about *what is in the video*. The claim that fails is about *which
+> second*.**
+
+The captions are accurate, specific and cheap, produced in one call at ~42.5K tokens for a 117-shot
+7-minute clip. The timeline is frame-accurate and deterministic. **What must not be assumed is that
+the two describe the same instant** — check the keyframe before acting on a single shot.
+
+**The successor is named, not dropped:** **[T012 — coarser intervals](T012-coarser-intervals.md)**,
+`not_started`. It carries the two costs this task cannot absorb — the frozen 17-shot sample stops
+being directly comparable (remap by timestamp, state the changed denominator) and fewer shots is a
+worse index for some questions.
+
+**Gates:** 211 fast tests, ruff clean, mypy strict clean (14 files). Unchanged — no code was touched
+this session. **The slow tests remain un-exercised against the live API** since D-030 lowered the
+score-range assertion 0.3 → 0.2; that is one request on any future live day.

@@ -15,11 +15,13 @@ Kept in sync by `/checkpoint`.
 | [T008](T008-cli.md) | `cli.py` — entrypoint | `done` | Thin wrapper, 36 tests, both Typer traps guarded. `--threshold` exposed and `check_api_key()` preflighted (**D-026**). Fixed two output defects the live run exposed: em dashes on cp1252, and lightning logging past root=WARNING. |
 | [T009](T009-e2e-validation.md) | E2E validation | `done` | **8 pass, 2 fail, 1 not-verifiable** — [`docs/run-report.md`](../docs/run-report.md). Passes: 1 call, 234.7s, 117 frame-accurate shots, 1436 words, 3 validators clean, 37 distinct scores. Fails: **38,956 tokens** vs the spec's 30K (target was wrong — D-025), and the **hand spot-check, 13 of 17 captions on the wrong shot** (**D-027** → T011). Not verifiable: the Path A A/B (D-016). |
 | [T010](T010-schema-sync-checkpoint.md) | Schema-sync checkpoint | `done` | Solo repo (D-016) — resolved as a self-lock. D-001/D-002/D-013 all closed. |
-| [T011](T011-caption-shot-alignment.md) | Caption ↔ `shot_index` alignment | `partial` | **Improved, not closed.** `p3` anchors the prompt on timestamps instead of letting the model count shots: **2/17 → 13/17**, then **6/17** on a replicate of the same config. Cause partly attributed (the model was counting, not locating); run-to-run variance exceeds the effect. Criterion 2 (≥12/17) and criterion 3 (`shot_059`) **fail**. Measurement is now repeatable — `elvideo/eval/alignment.py` (**D-028**, **D-029**). Left: **`fps=1.0`, 2–3 runs** — D-027 hypothesis 2 is still untested. |
+| [T011](T011-caption-shot-alignment.md) | Caption ↔ `shot_index` alignment | `partial` | **Improved, ceiling measured, not closed.** `p3` anchors the prompt on timestamps instead of letting the model count shots: **2/17 → mean 10.7/17** over three runs (13/6/13). **`fps` tested and rejected** — `fps=1.0` gives 9/8/9 at +30% tokens, so D-027 hypothesis 2 (frame starvation) is **wrong** and the default stays 0.5 (**D-030**). D-027 is now **`resolved`**, with a documented ~60% ceiling rather than a fix. Criteria 2 and 3 still **fail** (criterion 3 is 1 of 3 — `shot_005` matches on all six runs, `shot_059` on none); criterion 6 **closed as not achievable this way**; criterion 7 **met**. Also found: the free tier's real limit is **20 requests/day**, not the TPM cap (**D-031**). **CLOSED by design 2026-07-27 (D-032)** — `partial` is its final state, and it does **not** enter `completed_tasks`. Every lever inside its scope is measured; the remaining idea changes `shots[]` and is [T012](T012-coarser-intervals.md). Closing produced the consumer-trust split and known-limitations section in the run report, at **zero live requests**. |
+| [T012](T012-coarser-intervals.md) | Coarser intervals — ~60 shots, not 117 | `not_started` | **T011's named successor (D-032). Nothing run.** Hypothesis: the model is not bad at watching video, it is bad at telling 117 near-identical sub-3s intervals apart. One flag — `--threshold 40` on `ContentDetector` (D-012, D-026). **Two costs to pay first:** the frozen 17-shot sample stops being directly comparable (remap by *timestamp*, state the changed denominator), and fewer shots is a worse index for some questions. Full pipeline required every run (~235s); **8 of the day's 20 requests** for two thresholds × two runs, graded. |
 
 ## Suggested order
 
-Remaining: **T011**, still, and that is the whole list. T001–T010 are all `done`.
+Remaining: **T012**, and only if someone chooses to spend requests on it. T001–T010 are `done`;
+**T011 is closed at `partial` by design** (D-032) and is not coming back.
 
 **Nothing is blocked.** D-021 (the dead API key) was resolved on 2026-07-26, and the pipeline has
 run end to end for real.
@@ -30,17 +32,32 @@ free-tier key with no 429 — and then its hand spot-check found that **the capt
 attached to the wrong shots** (D-027). Nothing automated caught it, because every gate in the repo
 is a shape check and a misfiled caption has the right shape.
 
-**Session 008 measured it and moved it, and did not close it.** The measurement is now repeatable
+**Session 008 measured it and moved it. Session 009 bounded it.** The measurement is repeatable
 (`python -m elvideo.eval.alignment work/footage_index.json`, frozen 17-shot sample, Gemini judge
-that reproduced the human column 16/17). Prompt `p3` took clean agreement from **2/17 to 13/17** —
-and the identical configuration then scored **6/17**, so the honest result is "2/17 → 6–13/17,
-n=2". `p3` ships because both runs beat the baseline; ≥12/17 does not hold.
+that reproduced the human column 16/17). Prompt `p3` took clean agreement from **2/17 to a mean of
+10.7/17** over three runs. Then `fps` — the last untested hypothesis — was measured at three runs
+per setting and **rejected**: `fps=1.0` scores 9/8/9 against `fps=0.5`'s 13/6/13, at +30% tokens,
+while also flattening the editorial scoring. D-027 is `resolved`; ≥12/17 still does not hold.
 
-**The next move is one flag.** D-027's hypothesis 2 — frame starvation at `fps=0.5`, ~1.8 sampled
-frames per shot — has never been tested. Raise `--fps` to 1.0, ~+14K tokens per run, and because
-run-to-run variance is larger than most effects here, **budget 2–3 runs at each setting, not one**.
-Grade every run rather than eyeballing captions: the whole point of session 008's harness is that
-the number survives the session that produced it.
+**There is no cheap lever left, and that is the finding.** Prompt anchoring is worth ~9 matches of
+17; frame budget is worth none; the model's own timestamps detect nothing. `gemini-3.5-flash`
+attributing a moment to one of **117 sub-3-second intervals** across 7 minutes is roughly **60%
+reliable**, and nothing available inside one call closes the rest.
+
+**Session 010 made that decision: (b).** T011 is closed at `partial` with the ceiling accepted and
+stated, at **zero live requests** — `docs/run-report.md` § *T011 closed — partial by design* now
+carries a field-by-field **what a consumer may / may not trust** split, a known-limitations list for
+whoever writes the downstream agent, and the A/B claim in two halves: **what is in the video holds;
+which second does not.** See **D-032**.
+
+**Option (a) survives as [T012](T012-coarser-intervals.md), `not_started`** — merge adjacent sub-2s
+shots via `--threshold` so the model picks among ~60 distinguishable intervals. It is a change to
+`shots[]`, so it is a product decision, and it must pay for the broken sample comparability before
+its first run. **Budget it in requests, not tokens** — 20 `generate_content` calls per day (D-031),
+and a graded index run costs two.
+
+**s1 is otherwise finished.** The pipeline works end to end on a free-tier key: one Gemini call,
+117 shots, 1,436 words, ~42.5K tokens, 234.7s, three validators clean.
 
 ## Statuses
 

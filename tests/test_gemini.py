@@ -675,11 +675,15 @@ def test_real_video_one_call_spread_scores(monkeypatch: pytest.MonkeyPatch) -> N
     # of them on the 0.05 grid, and never used the hero band. p2 scored 37, 32/117 on the grid,
     # and reached 0.85.
     #
-    # Range stays at 0.3 deliberately. Two p2 runs of the same clip bottomed out at 0.10 and 0.50
-    # — whether the model scores the outro frames as unusable is genuinely variable, and `seed` is
-    # best-effort (D-019). Granularity is the assertion that actually detects clustering; range
-    # only catches the degenerate case.
-    assert max(scores) - min(scores) > 0.3, f"scores did not spread: {sorted(set(scores))}"
+    # Range lowered 0.3 -> 0.2 in T011 session 009, on six measured p3 runs rather than on two:
+    # 0.27 / 0.48 / 0.27 at fps=0.5 and 0.32 / 0.65 / 0.25 at fps=1.0. At 0.3 this assertion fails
+    # 4 of those 6 — it was a coin-flip, not a guard. **And it never caught what it was written
+    # for:** p1's range was 0.65 (0.10-0.75, D-024), comfortably over 0.3, so clustering has always
+    # been detected by the granularity assertions below, not by this one. 0.2 sits under the
+    # measured floor of 0.25 with margin and still fails a genuinely collapsed distribution.
+    # Whether the model calls the outro frames unusable is what moves min-score, and `seed` is
+    # best-effort (D-019). See D-030.
+    assert max(scores) - min(scores) > 0.2, f"scores did not spread: {sorted(set(scores))}"
     assert distinct >= 15, f"scores cluster — prompt bug ({distinct} distinct values at 2dp)"
     assert on_grid < 0.9 * len(scores), (
         f"{on_grid}/{len(scores)} scores land on the 0.05 grid — the model is picking from a "

@@ -843,7 +843,7 @@ real mutable defaults everywhere else rather than suppressing the rule or scatte
 
 ## D-027 — Gemini's per-shot judgments are attached to the wrong `shot_index`
 
-**Status:** `open` — **measured; cause partly attributed in T011, hypothesis 2 untested** · **Date:** 2026-07-26 · **Found by:** T009 · **Affects:** T004, the A/B writeup · **See the Update at the end of this entry**
+**Status:** `resolved` — **both hypotheses measured; 1 supported, 2 rejected; a residual ceiling remains and is documented** · **Date:** 2026-07-26 · **Found by:** T009 · **Affects:** T004, the A/B writeup · **See the two Updates at the end of this entry**
 
 T009's hand spot-check — the one acceptance criterion that requires a human to look at frames —
 found that **most captions do not describe the shot they are stored on.** 17 shots sampled across
@@ -928,6 +928,45 @@ supported and hypothesis 2 is still untested:
 
 Full numbers: `docs/run-report.md` § *T011*. Ships as `p3` because both of its runs beat the
 baseline; T011's ≥12/17 criterion is recorded as **failed**.
+
+**Update 2, 2026-07-26 (T011 session 009). Hypothesis 2 is measured and REJECTED. This entry moves
+to `resolved`** — not because the defect is fixed, but because its closure condition ("closes when
+hypothesis 2 is measured or the fix is stable at ≥12/17") is met and the cause is now attributed as
+far as this design can attribute it.
+
+**Frame starvation is not the cause.** Three runs at `fps=1.0` against three at `fps=0.5`, `p3`
+throughout, one call each, graded on the frozen sample:
+
+| `fps` | Clean matches /17 | Mean | Tokens (mean) |
+|---|---|---:|---:|
+| 0.5 | 13, 6, 13 | **10.7** | 42,553 |
+| 1.0 | 9, 8, 9 | **8.7** | 55,500 |
+
+Doubling the frames the model sees — from ~1.8 per shot to ~3.7 — **does not improve attribution**,
+costs +30% tokens, and degrades the score spread (the `stdev < 0.05` warning fired on 2 of 3
+`fps=1.0` runs and on none at `fps=0.5`). The mechanism was plausible and it is wrong: the model
+was not failing for lack of pixels. See **D-030** for the resulting default.
+
+**A finding that reframes the variance, and corrects Update 1.** Session 009's `fps=0.5` run
+reproduced session 008's run 1 **bit-identically** — all 117 captions, all 117 scores, the total
+token count (42,764) and the grading call's token count (7,721), hours apart. `seed=7` is therefore
+**exactly reproducible**, not merely best-effort-with-jitter. The 6/17 replicate was not a noisy
+draw around a mean; it was a *second deterministic outcome*. At `fps=0.5` exactly two outcomes have
+been seen: **A** (13/17, 42,764 tok) twice and **B** (6/17, 42,131 tok) once.
+
+The practical rule is unchanged — a single run still cannot rank two configurations — but the
+reason is different, and worth stating so nobody reasons about it as Gaussian noise: **repeated
+runs sample how many distinct outcomes the service will serve, not a distribution around a true
+value.** A mean over three runs summarises a small discrete set.
+
+**What is actually left.** Between the two updates, the defect is bounded from both sides: prompt
+anchoring is worth ~9 matches out of 17, frame budget is worth none, and the model's self-report
+detects nothing. `gemini-3.5-flash` attributing a moment to one of **117 sub-3-second intervals**
+across 7 minutes is roughly **60% reliable**, and neither lever available inside one call closes
+the rest. The one untested class of fix is **asking a different question**: merge adjacent very
+short shots before the call so the model chooses among ~60 distinguishable intervals rather than
+117 near-identical ones. That changes `shots[]` itself, so it is a product decision (and a
+`--threshold` change), not a prompt tweak. Recorded here as the successor idea, not scheduled.
 
 ---
 
@@ -1019,3 +1058,143 @@ the sample file and in the report, rather than smoothed over.
 **Cost:** ~3K tokens per grading call, seconds of wall clock. Cheap enough that it should run on
 every future prompt change — and per D-027's update, **2–3 times per configuration**, because
 run-to-run variance on this measure is larger than most of the effects being chased.
+
+---
+
+## D-030 — `fps` default stays 0.5; raising it is measured and rejected
+
+**Status:** `resolved` · **Date:** 2026-07-26 · **Task:** T011 · **Closes:** T011 criterion 7 · **Affects:** D-019, `docs/IDEA.md` § *Gemini call settings (locked)*
+
+`docs/IDEA.md` pins `fps: 0.5` as the default and calls it a per-video knob. D-027 hypothesis 2
+argued the default was starving the model of frames on a clip where 36 of 117 shots are under 2s.
+T011 criterion 7 requires that any change to it be justified with **measured agreement and token
+cost at both values** — so it was measured at both, three runs each, rather than argued.
+
+**Decision: the default stays `DEFAULT_SAMPLE_FPS = 0.5`. No code change.**
+
+| `fps` | Agreement (mean of 3) | Tokens (mean) | Score spread |
+|---|---:|---:|---|
+| **0.5** | **10.7 / 17** | **42,553** | stdev 0.058, 27–30 distinct; clustering warning never fired |
+| 1.0 | 8.7 / 17 | 55,500 (+30%) | stdev 0.043–0.080, 21–26 distinct; warning fired on 2 of 3 |
+
+`fps=1.0` costs 30% more tokens, aligns no better (the 8–9 band sits inside `fps=0.5`'s 6–13 band),
+and measurably flattens the editorial scoring it was not supposed to touch. There is no reading of
+these numbers that justifies moving a pinned default.
+
+**The knob is unchanged and still worth having.** `--fps` remains exposed on the CLI (T008) and is
+still the right lever for footage genuinely unlike this clip — a static talking head downward, fast
+action upward. What is now recorded is that **it is not a fix for attribution**, so nobody spends
+another 55K tokens rediscovering that.
+
+**Rides along: the slow test's score-range assertion is lowered 0.3 → 0.2.** This was left as a
+known coin-flip in session 008 on two samples; six `p3` runs now bound it. Measured ranges:
+0.27 / 0.48 / 0.27 at `fps=0.5`, 0.32 / 0.65 / 0.25 at `fps=1.0`. At 0.3 the assertion fails **4 of
+6** — and it never caught what it was written for: **`p1`'s range was 0.65** (0.10–0.75, D-024),
+comfortably over 0.3, so `p1`-style clustering has always been caught by the granularity assertions
+(`distinct ≥ 15`, `<90%` on the 0.05 grid), never by this one. 0.2 sits below the measured floor of
+0.25 with margin and still fails a genuinely collapsed distribution. The reasoning is in the test
+body, not just here.
+
+---
+
+## D-031 — The binding free-tier limit is 20 requests/day/model, not the TPM cap
+
+**Status:** `resolved` — **a session-planning constraint; no code change** · **Date:** 2026-07-26 · **Task:** T011 · **Affects:** every future live session, `docs/IDEA.md` § *Gemini call settings*, D-025
+
+`docs/IDEA.md` says "TPM cap is 250K/min → iterate freely all day", and D-025 re-anchored the token
+budget to that cap. Both are about **tokens**. Session 009 budgeted 5 index runs, ran 4, and the
+fifth was refused:
+
+```
+Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests,
+limit: 20, model: gemini-3.5-flash
+quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier
+```
+
+**The real ceiling on iteration is 20 `generate_content` requests per project per model per day.**
+Not 10 RPM (that is a per-minute cap the backoff already handles), not 250K TPM. At ~42K tokens a
+run, 20 requests is ~840K tokens — so **the request count runs out long before the token budget
+does**, and every token-based budget in this repo has been measuring the non-binding resource.
+
+**What this changes, concretely:**
+
+- **Grading calls come out of the same pool as index calls.** `elvideo.eval.alignment` is
+  deliberately not counted by `generate_call_count()` (D-029, hard constraint 1) — that is correct
+  for the one-call-per-video rule and misleading for quota. A measured index run costs **2**
+  requests, not 1.
+- **A session gets ~10 measured runs per day, shared with anything else on the key.** Session 008
+  spent 7 requests and session 009 spent 8, the same day, which is where the 20 went.
+- **"2–3 runs per configuration" (D-027) is expensive in the resource that actually binds.**
+  Comparing two settings properly is 12 requests — over half a day's quota.
+
+**No code change, deliberately.** The backoff already retries 429 and already emits an actionable
+message; it simply cannot retry its way past a daily cap, and it correctly gave up after 5
+attempts. The fix is to **plan sessions in requests, not tokens** — state the request count up
+front the way session 009 stated the token count, and stop at the cap rather than discovering it.
+
+**`docs/IDEA.md` is left unedited**, per `.claude/CLAUDE.md`'s rule that a conflict with the spec is
+logged rather than silently resolved. Its "iterate freely all day" is optimistic; this entry is the
+correction. Flagged for the owner alongside the D-016 follow-up.
+
+---
+
+## D-032 — T011 closes as `partial` **by design**; the coarser-intervals experiment is its named successor
+
+**Status:** `resolved` — **scope decision, not a pass. No code change, no live requests.** · **Date:** 2026-07-27 · **Task:** T011 → T012 · **Affects:** `tasks/T011-caption-shot-alignment.md`, `tasks/backlog.md`, `docs/run-report.md`, `state/progress.json`
+
+Session 010 had exactly two legitimate moves and had to pick one before spending anything:
+**(A)** change *what is asked* — merge adjacent sub-2s shots via `--threshold` so the model chooses
+among ~60 distinguishable intervals instead of 117 near-identical ones; **(B)** accept the measured
+ceiling, close T011, and write the A/B up precisely. **B was chosen.**
+
+**The decision: T011 is closed at `partial`, and `partial` is the correct final state — it does not
+become `done` and it does not enter `completed_tasks`.** Its criteria 2 and 3 fail and are recorded
+as failing. Closing it is a statement that *no further work on T011 as scoped will change that
+number*, not a claim that the number is acceptable.
+
+**Why the ceiling is genuinely closed rather than merely unbeaten.** Every lever inside T011's scope
+has been pulled and measured across sessions 008–009:
+
+| Lever | Result | Where |
+|---|---|---|
+| Prompt: stop the model counting shots, anchor on timestamps (`p2` → `p3`) | **2/17 → mean 10.7/17** | D-027, D-028 |
+| Prompt: restore score spread (`p4`) | Alignment collapsed to 4/17 — reverted | D-028 |
+| Frame budget: `fps` 0.5 → 1.0 | **Worse** (8.7 vs 10.7) at **+30% tokens** | D-030 |
+| Model self-report as a detector (`hint_drift()`) | 0–1 of 117 on runs two-thirds wrong | D-027, D-029 |
+| Validity checks inside `understand()` | Pass on every run including the 6/17 one | T011 criterion 6, closed |
+
+What remains outside the repo's reach: a bigger model (pinned, hard constraint 3), per-shot calls
+(forbidden by hard constraint 1 and the reason this project exists), and finer control over how
+Gemini binds a judgment to an interval (not exposed). **The only untested class of fix changes
+`shots[]` itself**, which is a different artifact, not a fix to this one.
+
+**The measured statement being closed on:** `gemini-3.5-flash` attributing a moment to one of 117
+sub-3-second intervals across a 7-minute clip is **~60% reliable — 58 of 102 graded pairs clean over
+six `p3` runs**, and no lever available inside one call closes the remaining 40%.
+
+**What closing produces instead of another run:** `docs/run-report.md` § *T011 closed — partial by
+design* now carries an explicit **what a consumer may / may not trust** split, a numbered
+known-limitations list aimed at whoever writes the downstream agent, and the A/B claim stated as two
+halves — **the claim about *what is in the video* holds; the claim about *which second* does not.**
+That is a more useful artifact than a seventh prompt variant, and it cost zero of the day's 20
+requests (D-031).
+
+**The successor is named, not dropped: [T012](../tasks/T012-coarser-intervals.md), `not_started`.**
+It is deliberately a new task rather than a continuation, because it changes `shots[]` — the index's
+spine, its `t_start`/`t_end`, its keyframes — and T011's own Inputs/Outputs section states the
+boundary list arrives "unchanged, both already correct". Two costs are recorded in the task file so
+they are paid consciously: **the frozen 17-shot sample stops being directly comparable** (it is keyed
+on `shot_###` ids that would no longer denote the same footage — remap by *timestamp* and state the
+changed denominator), and **fewer shots is a worse index for some downstream questions**, since a
+1.4s B-roll cutaway can vanish inside a 6s parent.
+
+**The schema does not change** under either path — `shots[]` gets different *content*, not a
+different *shape* (hard constraint 6). If T012 ever needs a field recording that shots were merged,
+that is a contract change and comes back here first.
+
+**Revisit if:** T012 reaches a stable ≥12/17 on a stated denominator — in which case the ceiling was
+a property of *this footage's* cut granularity, not of the model, and that is worth saying loudly.
+Or if the pinned model changes (hard constraint 3 would have to move first), which would invalidate
+the ceiling measurement outright rather than refine it.
+
+---

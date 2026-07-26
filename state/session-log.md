@@ -1004,3 +1004,220 @@ wording: "a smaller improvement is a legitimate result to record, but it does no
   `--fps 1.0`, the untested D-027 hypothesis 2. **Budget 2–3 runs per setting, not one** — this
   session proved a single run cannot rank two configurations on this measure. Grade every run with
   `python -m elvideo.eval.alignment`; do not eyeball captions.
+
+---
+
+## 2026-07-26 — T011 continued · `fps` measured, D-027 resolved, and the real quota found
+
+**Task(s):** T011 — D-027 hypothesis 2 (frame starvation at `fps=0.5`)
+**Status at end:** **`partial`**, unchanged and correctly so. **Criterion 2 (≥12/17) and criterion 3
+still fail.** But D-027 is now **`resolved`**: both hypotheses are measured, and the defect has a
+bounded ceiling instead of an open question.
+
+### Done
+
+- **Hypothesis 2 tested properly — three runs per setting, not one.** A ~110-line scratchpad driver
+  re-runs *only* `understand()` against the existing `work/footage_index.json` (boundaries,
+  transcripts and quality scores are already correct and cost 150s of CPU to recompute), then each
+  index is graded by `python -m elvideo.eval.alignment`. ~100s per run instead of 235s.
+
+  | `fps` | Clean matches /17 | Mean | Tokens (mean) | Score spread |
+  |---|---|---:|---:|---|
+  | **0.5** | 13, 6, 13 | **10.7** | **42,553** | clustering warning never fired |
+  | 1.0 | 9, 8, 9 | 8.7 | 55,500 (+30%) | warning fired on 2 of 3 (stdev 0.048, 0.043) |
+
+  **Frame starvation is not the cause.** Doubling sampled frames (~1.8 → ~3.7 per shot) buys
+  nothing on attribution, costs 30% more tokens, and *flattens the editorial scoring it was not
+  meant to touch*. Call count **1** on all six runs, read from the counter.
+
+- **`seed=7` turns out to be exactly reproducible, which rewrites last session's variance story.**
+  This session's `fps=0.5` run reproduced session 008's run 1 **bit-identically** — all 117
+  captions, all 117 `editorial_score` values, the total token count (42,764), even the grading
+  call's 7,721 — hours apart. So the 6/17 replicate was **a second deterministic outcome, not a
+  noisy draw around a mean**. At `fps=0.5` exactly two outcomes have ever been seen: A (13/17,
+  42,764 tok) twice, B (6/17, 42,131 tok) once. The practical rule ("2–3 runs per configuration")
+  survives; its justification does not. Repeated runs sample a small **discrete** set.
+
+- **`shot_005` is settled** — it matches its frame on all six `p3` runs at both sample rates. One of
+  criterion 3's three named shots is met.
+
+- **The slow test's coin-flip assertion is now set on evidence, not left as a known flake.**
+  `max(scores) - min(scores) > 0.3` → `> 0.2`, with the reasoning in the test body: six measured
+  `p3` runs ranged 0.25–0.65, so 0.3 failed **4 of 6** — and it never caught what it was written
+  for, because **`p1`'s range was 0.65** (0.10–0.75, D-024), comfortably over 0.3. Clustering has
+  always been caught by the granularity assertions, never by this one. 0.2 sits below the measured
+  floor with margin.
+
+- **`docs/run-report.md`** gained a new top-level section *T011 continued — `fps` tested*, beneath
+  the existing T011 numbers rather than replacing them: the six-run table, the bimodal-variance
+  finding, the three named shots at both rates, the quota discovery, and a re-scored 9-row criteria
+  table (6 pass / 2 fail / 1 closed-as-not-achievable).
+
+- **Gates:** `uv run pytest -m "not slow"` **211 passed** · `uv run ruff check .` clean ·
+  `uv run mypy elvideo` strict clean (14 files).
+
+### Not done / deferred
+
+- **Run 5 of the agreed 5 never ran.** The key hit a daily cap the repo had never recorded:
+
+  ```
+  Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests,
+  limit: 20, model: gemini-3.5-flash
+  ```
+
+  It was budgeted as a fourth `fps=0.5` datapoint. `fps=0.5` therefore has n=3, not n=4. This does
+  not change the verdict — the two settings' means differ by 2.0 matches in the *opposite* direction
+  to the hypothesis — but the baseline is one sample thinner than planned. See **D-031**.
+
+- **The slow tests were not re-run** (4 total, last green 2026-07-26). The gemini one needs a live
+  call and the quota was gone. **The lowered 0.2 threshold has therefore not been exercised against
+  the real API** — it is set from six recorded runs, not verified by a seventh.
+
+- **Criterion 2 is not met and there is no cheap lever left.** Prompt anchoring is worth ~9 matches
+  of 17; frame budget is worth none. The remaining idea (merge sub-2s shots before the call so the
+  model picks among ~60 distinguishable intervals rather than 117 near-identical ones) changes
+  `shots[]` itself — a product decision, deliberately **not** folded into T011.
+
+- **One transient failure worth not misreading:** an `httpx.RemoteProtocolError: Server
+  disconnected without sending a response` during a File API upload. Not a 429, no quota spent,
+  succeeded on retry. Distinct from the quota error above.
+
+- `work/footage_index.json` deliberately left as the T009 `p2` artifact — it is the published 2/17
+  baseline the grader was calibrated against. The six `p3` indexes live beside it under explicit
+  names.
+
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-027 → `resolved`.** Closure condition ("closes when hypothesis 2 is measured or the fix is
+  stable at ≥12/17") is met by the first clause. Resolved with the defect **not fixed** and the
+  residual ceiling written into the entry: `gemini-3.5-flash` attributing a moment to one of 117
+  sub-3-second intervals across 7 minutes is roughly **60% reliable**, and no lever available inside
+  one call closes the rest. Records the successor idea (coarser intervals) as unscheduled.
+- **D-030 (new, `resolved`)** — `fps` default stays 0.5, justified with agreement *and* token cost
+  at both values, n=3 each, per T011 criterion 7. Also carries the slow test's 0.3 → 0.2 change and
+  the argument that the range assertion was never the guard it was believed to be.
+- **D-031 (new, `resolved`)** — the binding free-tier limit is **20 `generate_content`
+  requests/day/project/model**, not the 250K TPM cap `docs/IDEA.md` says lets you "iterate freely
+  all day". At ~42K tokens a run, requests run out long before tokens. **Grading calls come from the
+  same pool**, so a *measured* index run costs 2 requests. No code change — the backoff behaved
+  correctly and cannot retry past a daily cap. Plan sessions in requests, not tokens.
+- **Criterion 6 closed as *not achievable this way*** rather than left `PARTIAL`. Validity checks
+  pass on every run including the 6/17 one; `hint_drift()` reports 0–1 of 117 on runs that are half
+  wrong. No detector exists inside `understand()` that does not look at frames, and looking at
+  frames is a second model call — outside it by hard constraint 1. The grading harness *is* that
+  detector, correctly kept as a separate consumer.
+- **`docs/IDEA.md` left unedited** on the quota point, per the CLAUDE.md rule that a conflict with
+  the spec is logged rather than silently resolved. Flagged to the owner beside D-016.
+
+### Blockers
+
+- **None that block work.** `blockers` is empty and `open_decisions` is now **empty for the first
+  time since T009** — D-027 is resolved and D-030/D-031 were resolved as they were written.
+- **A live constraint, not a blocker:** the daily 20-request quota is spent for 2026-07-26. Any
+  session needing live calls should start on a later day, or with the request count planned.
+- The D-016 owner follow-up (`.claude/CLAUDE.md` hard constraint 6 and `docs/IDEA.md` still describe
+  a Path A counterparty that does not exist) is still open and still blocks nothing. **D-031 adds a
+  second item to that same owner pile:** `docs/IDEA.md`'s "iterate freely all day".
+
+### Next
+
+- **A decision, not a task.** T011's cheap levers are exhausted. Either (a) `/new-task` the
+  coarser-intervals experiment — raise `--threshold` so adjacent sub-2s shots merge and the model
+  chooses among ~60 distinguishable intervals — which is a change to `shots[]` and therefore a
+  product decision; or (b) accept the measured ~60% ceiling, close T011 as partial-by-design, and
+  write the A/B up honestly. `prompts/session-start/010-alignment-ceiling-or-coarser-shots.md`
+  frames both.
+
+---
+
+## 2026-07-27 — T011 (closed), T012 (created) · Path B: accept the ceiling, write it up
+
+**Task(s):** T011 — caption ↔ `shot_index` alignment · T012 — coarser intervals (created, not started)
+**Status at end:** T011 `partial` — **closed by design**. T012 `not_started`.
+**Live Gemini requests spent: 0.**
+
+Session 010 was framed as a choice between two paths, and the choice was the work.
+**Path B was taken:** accept the measured ~60% ceiling, close T011, and state precisely what the
+index can and cannot be trusted for. Path A (coarser intervals via `--threshold`) was **not** run —
+it is written up as T012 instead. No code was touched this session; the deliverable is documentation
+of a result that was already measured.
+
+Clock note: local date 2026-07-27 (IST), UTC `2026-07-26T18:40Z`. Files date this session 2026-07-27.
+
+### Done
+
+- **`docs/run-report.md`** — fourth section appended, **§ *T011 closed — partial by design
+  (2026-07-27, session 010)*.** Extends, does not replace, the three measured sections. Contains:
+  - **What a consumer may trust**, field by field with the evidence: `t_start`/`t_end` (0 of 234
+    boundary values off the 1/25s grid, 10,701/10,701 frames covered), shot ordering, `words[]`
+    (joined by time window, not index — structurally immune to the defect), `keyframe` paths
+    (`ffmpeg`-verified on three shots), schema shape, and the caption *corpus* as searchable content.
+  - **What a consumer may not trust**: that `shots[i].caption` describes `shots[i]` — **58 of 102**
+    graded pairs clean over six `p3` runs; `editorial_score` and `is_candidate` on a *named* shot,
+    which inherit the same error wholesale; and `t_start_hint`/`t_end_hint` as a self-check.
+  - A **6-point known-limitations list** aimed at whoever writes the downstream agent.
+  - The **A/B claim split in two**: the claim about *what is in the video* holds (one call, 117
+    shots, ~42.5K tokens, 86.8s of a 234.7s run, free tier); the claim about *which second* does not.
+- **`state/decisions-log.md`** — **D-032** appended: T011 closes as `partial` by design; the
+  coarser-intervals experiment is its named successor. Carries the exhausted-lever table and the
+  revisit condition.
+- **`tasks/T012-coarser-intervals.md`** — new task file, `not_started`, nothing run. Goal, the two
+  costs it must pay before its first live request, nine acceptance criteria, and the constraints
+  specific to it (the session-009 understanding-only driver **does not apply** — changing boundaries
+  forces the full pipeline).
+- **`tasks/T011-caption-shot-alignment.md`** — Status line rewritten to record the by-design closure;
+  third **Outcome** section appended (2026-07-27).
+- **`tasks/backlog.md`** — T011 row updated to closed-by-design, **T012 row added**, and the
+  "Suggested order" prose rewritten so the index does not still read as though a decision is pending.
+- **`state/progress.json`** — `current_task` `T012`, `closed_2026_07_27_session_010` block, a
+  `consumer_contract` block mirroring the trust/do-not-trust split, and a rewritten `next_task`.
+
+### Not done / deferred
+
+- **T011's criteria 2 and 3 still fail, and that is now permanent.** Closing the task does not close
+  the gap: ≥12/17 was never reached (best mean **10.7/17**), and `shot_059` matched its frame on
+  **0 of 6** `p3` runs. **T011 is NOT in `completed_tasks`.**
+- **Path A was not attempted.** No coarser-threshold run exists, so the hypothesis that ~60
+  distinguishable intervals fixes attribution is **untested**, not disproved. It is T012.
+- **The slow tests (4) were not re-run** — unchanged from session 009. D-030 lowered the score-range
+  assertion 0.3 → 0.2 from six recorded runs, and that threshold has **still never been exercised
+  against the live API**. Worth one request on a future live day.
+- **The two owner follow-ups are untouched and still block nothing:** D-016 (CLAUDE.md hard
+  constraint 6 and `docs/IDEA.md` describe a Path A counterparty that does not exist) and D-031
+  (`docs/IDEA.md`'s "TPM cap 250K/min → iterate freely all day", contradicted by the 20-request daily
+  cap). Both left unedited per the CLAUDE.md conflict rule.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-032 (new, `resolved`)** — the session's substance. T011 closes at `partial`; `partial` is its
+  **final** state, not a waypoint. Justified by the exhausted-lever table (prompt anchoring worth ~9
+  matches of 17, `p4` reverted, `fps` worse at +30% tokens, self-report worth nothing, validity
+  checks pass even on the 6/17 run) plus what is out of reach (bigger model pinned out by hard
+  constraint 3, per-shot calls forbidden by hard constraint 1). Records **T012** as the named
+  successor with its two costs, and states the revisit condition: if T012 reaches a stable ≥12/17 on
+  a stated denominator, the ceiling was a property of *this footage's* cut granularity rather than
+  of the model — a stronger claim than T011 can currently make.
+- **`progress.json` `status` deviates from `/checkpoint`'s four-value enum** — it reads
+  `not_started` with a `status_note` explaining why. Nothing is in progress: T011 is closed and T012
+  is written but unstarted. `in_progress` would be false and `task_complete` would overstate. Flagged
+  here rather than silently picked.
+- **T012 was given a full task file rather than a backlog line.** "Recorded as the named successor"
+  is worth more as the repo's own contract format — task files are the contract, the backlog is an
+  index. Writing it cost nothing and it is explicitly `not_started`; it is not Path A's work, which
+  would have required runs, grades, and a report section.
+
+### Blockers
+
+- **None.** `blockers` is empty and `open_decisions` is empty — D-032 was resolved as it was written.
+- **Not a blocker, a standing constraint:** 20 `generate_content` requests per project per model per
+  day (D-031), grading calls included. Any future live session states its request count up front.
+
+### Next
+
+- **T012 — coarser intervals — and it is optional, not owed.** s1's pipeline is finished and its
+  result is written up; T012 only buys better attribution at the cost of index granularity. If
+  nobody picks it up, the repo is in a coherent finished state as it stands.
+- Generated prompt: **`prompts/session-start/011-coarser-intervals-or-stop.md`**.
