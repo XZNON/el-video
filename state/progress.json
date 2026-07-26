@@ -10,8 +10,10 @@
     "T006",
     "T007",
     "T008",
+    "T009",
     "T010"
   ],
+  "t009_closure_note": "T009 is done in the sense its own task file defines - every criterion measured and recorded, including the ones that fail. It is NOT 12/12 pass: 8 pass, 2 fail (tokens 38,956 vs the spec's 30K; the caption spot-check at 13 of 17 wrong), 1 not-verifiable (no Path A). Report: docs/run-report.md. The spot-check failure is D-027 and is now T011.",
   "blockers": [],
   "cleared_2026_07_26": "D-021 resolved - owner supplied a free-tier key and the live run passed. T004 is done. T007 closed the same day: the first live CLI run measured 234.7s end to end with a real Gemini call, so the <5 min criterion is no longer a projection.",
   "env": {
@@ -33,7 +35,9 @@
     "shots_at_threshold_27": 117,
     "note": "gitignored; both A/B paths hold the same file. See decisions-log D-003."
   },
-  "open_decisions": [],
+  "open_decisions": [
+    "D-027 - Gemini's per-shot judgments attach to the wrong shot_index. Measured (2 match / 2 partial / 13 mismatch of 17 hand-checked shots on in.mp4), cause NOT diagnosed, fix deferred to T011. Open because the two hypotheses - Gemini's second-granular timestamps vs a 2.68s median shot, and ~1.8 sampled frames per shot at fps=0.5 - are both untested."
+  ],
   "resolved_2026_07_26": {
     "D-001": "full index + is_candidate",
     "D-002": "vendored; settings pinned in D-012 + D-015",
@@ -125,6 +129,15 @@
     "exit_codes": "0 on a written+validated index; 1 on missing video / missing GEMINI_API_KEY / unwritable work dir / any pipeline or schema error; 2 from Typer on a bad option value.",
     "note": "Thin wrapper, build.py untouched. --threshold exposed and gemini.check_api_key() made public - both logged in D-026. Two output defects the first live run exposed are fixed: em dashes in log/exception messages rendered as '?' on cp1252, and lightning printed at INFO despite root=WARNING because it sets a level on its own logger."
   },
-  "next_task": "T009 - E2E validation on in.mp4. Most of its evidence already exists from this session's live run (234.7s, 117 shots, 1 call, 38,956 tokens, 43 candidates, validates clean). What is left is the written run report in a tracked file, the 5-shot hand spot-check, and recording the machine. Assert tokens against ~40K, not the spec's 30K (D-025).",
-  "last_updated": "2026-07-26T14:35:00Z"
+  "validation": {
+    "report": "docs/run-report.md",
+    "measured": "2026-07-26, laptop: AMD Ryzen 7 5800H 8C/16T, 15.3GB RAM, Windows 11 Home 10.0.26200, cpu-only torch 2.8.0, Python 3.12.11, ffmpeg 8.1.1",
+    "criteria": "8 pass / 2 fail / 1 not-verifiable",
+    "schema_validators_passed": ["validate_index()", "jsonschema draft 2020-12", "pydantic FootageIndex"],
+    "frame_accuracy": "0 of 234 boundary values off the 1/25s grid; shots contiguous; 10701 of 10701 frames covered",
+    "spot_check": "17 shots hand-checked against their keyframes: 2 clean match, 2 partial, 13 mismatch. Keyframes re-extracted independently with ffmpeg for shots 025/059/105 and are identical to the pipeline's, so boundaries and keyframe sampling are ruled out. Transcript is unaffected (joined by time window, not index). See D-027.",
+    "not_verifiable": "A/B against Path A - no counterparty exists (D-016)"
+  },
+  "next_task": "T011 - caption/shot_index alignment. The repo's top defect and the only remaining task. Start with the repeatable measurement against the EXISTING work/footage_index.json, not with a change: 17 hand-checked shots prove the problem is real and cannot attribute a cause. Two untested hypotheses in D-027. Any fix stays inside ONE Gemini call (hard constraint 1). Budget live runs - each is ~39K tokens and ~4 min.",
+  "last_updated": "2026-07-26T17:05:00Z"
 }

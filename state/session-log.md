@@ -797,3 +797,98 @@ clean, 12 files.
   file** (`work/` is gitignored), the **five-shot hand spot-check**, and the machine recorded.
   Token assertions go against **~40K, not the spec's 30K** (D-025) — and that miss is itself one of
   T009's findings.
+
+---
+
+## 2026-07-26 — T009 · E2E validation, and the defect it found
+
+**Task(s):** T009 — E2E validation on the A/B test video
+**Status at end:** T009 **`done`** — 8 criteria pass, 2 fail, 1 not-verifiable, all recorded.
+**T011 opened** and is now the only remaining task.
+
+### Done
+
+- **`docs/run-report.md` written and tracked** — the deliverable T009 actually owed. Carries the
+  command, the machine (Ryzen 7 5800H, 8C/16T, 15.3GB, Windows 11, cpu-only torch 2.8.0, Python
+  3.12.11, ffmpeg 8.1.1), the eight per-stage timings, tokens against the corrected target, the
+  call count read from the counter, the score distribution, the 17-shot spot-check table, and a
+  pass/fail/not-verifiable verdict with a reason for every criterion.
+- **The pipeline's structural claims all verified against the existing live run** — no re-run, the
+  recorded numbers were current and a second run would have spent ~39K tokens to reproduce them:
+  - schema validity checked **three** independent ways — `validate_index()`, `jsonschema` draft
+    2020-12 against `elvideo/schema/footage_index.schema.json`, and `pydantic` — all clean;
+  - **frame accuracy verified numerically**, not assumed: all 234 boundary values are exact
+    multiples of 1/25s (**0** off-grid), shots are contiguous, and they cover 10,701 of the
+    container's 10,701 frames;
+  - 1 Gemini call, 38,956 tokens, 0×429, 234.7s, 117 shots, 1,436 words, 43 candidates, and the
+    `is_candidate` flag agrees with the 0.65 threshold on all 117 shots;
+  - score spread confirmed: 37 distinct at 2dp, 32/117 on the 0.05 grid, largest cluster 10.
+- **The hand spot-check was done properly and it failed.** 17 shots compared against their
+  extracted keyframes: **2 clean matches, 2 partial, 13 mismatches.** The worst is `shot_059`, the
+  clip's top-scored shot at 0.85 — captioned "three men sit side-by-side in the back seat and give
+  a thumbs up", frame shows the presenter at an open boot with nobody in the car.
+- **The obvious innocent explanations were ruled out before blaming the model.** Frames
+  re-extracted with `ffmpeg -ss <midpoint> -frames:v 1` for shots 025, 059 and 105 are the same
+  images `quality.score_shot()` wrote, so keyframe sampling and shot boundaries are both correct.
+  `transcript` is unaffected — it joins by time window from WhisperX and matches the picture on the
+  same shots whose captions are wrong. **The classical half of the pipeline is sound; the LLM half
+  is misfiled against it.** It is also not a constant offset (`shot_022`'s caption lands on
+  `shot_025`, +3; `shot_048`'s describes what `shot_033` shows, −15), so no index shift repairs it.
+- **`tasks/T009-e2e-validation.md`** updated: status `done`, every criterion ticked or explicitly
+  failed with its evidence, plus an Outcome note.
+- **`tasks/T011-caption-shot-alignment.md` created** and registered in `tasks/backlog.md`.
+- Gates: `uv run pytest -m "not slow"` **191 passed**, `uv run ruff check .` clean,
+  `uv run mypy elvideo` strict clean (12 files).
+
+### Not done / deferred
+
+- **The alignment defect is not fixed, on purpose.** T009's contract is to measure, and its own
+  Notes section says a failing criterion is a legitimate outcome. Fixing it here would have meant
+  spending free-tier quota on prompt experiments under a task that exists to report numbers.
+  → **T011**.
+- **The cause is not diagnosed.** Two hypotheses are recorded in D-027 and neither is tested:
+  (1) Gemini's timestamps are second-granular while the median shot is **2.68s** and **36 of 117**
+  are under 2s; (2) at `fps=0.5` there are ~214 frames for 117 shots — 1.8 each, and the sub-2s
+  shots get one frame or none. 17 hand-checked shots prove the problem is real and are not enough
+  to attribute a cause.
+- **The spot-check sample is hand-picked, not systematic.** Shots were chosen to span the score
+  range and the timeline, which is fine for finding a defect and wrong for measuring one. T011's
+  first criterion is a repeatable sample with a fixed rule so a later run compares like with like.
+- **The slow tests were not re-run** (last green 2026-07-26, 4/4). Nothing in this session touched
+  code — only Markdown, JSON state and one new task file.
+- **No re-run of the pipeline**, and none was needed: no code changed, so the recorded numbers
+  still describe the artifact on disk.
+- No commit — the user drives git.
+
+### Decisions made
+
+- **D-027 (new, `open`)** — Gemini's per-shot judgments attach to the wrong `shot_index`. Logged as
+  a **measurement, not a diagnosis**: the numbers, what was ruled out, the two untested hypotheses,
+  and the constraint that shapes any fix (one call per video — a per-shot loop is the design this
+  project exists to avoid and would blow the 10 RPM cap on 117 shots). Left `open` deliberately;
+  it closes when T011 attributes a cause.
+- **T009 closes as `done` with two failing criteria**, rather than as `partial`. Its acceptance
+  criteria are a checklist to *measure and record*, and all twelve were measured and recorded. A
+  `partial` would imply measurement work is outstanding, which it is not — remediation is
+  outstanding, and that has its own task.
+- **Reported the failure rather than tuning around it**, per the task file and the session prompt:
+  the useful output is the measured number plus the reason, not a run tuned until an estimate comes
+  true. Nothing was adjusted to improve either failing criterion.
+- No conflict with `docs/IDEA.md` to log under the CLAUDE.md conflict rule. The ~30K token figure
+  in § *Gemini call settings* is superseded by D-025, which already records it.
+
+### Blockers
+
+- **None.** `blockers` is empty and the API key works.
+- `open_decisions` now holds **D-027** — open because the cause is untested, not because anything
+  is waiting on a human. It does not block T011; it *is* T011's subject.
+- The D-016 owner follow-up (`.claude/CLAUDE.md` hard constraint 6 and `docs/IDEA.md` still
+  describe the co-founder's Path A repo as a live sync risk) is still open and still blocks
+  nothing. It is why criterion 7 is marked not-verifiable rather than failed.
+
+### Next
+
+- **T011 — caption ↔ `shot_index` alignment**: `prompts/session-start/008-caption-alignment.md`.
+  The repo's top defect and the only remaining task. Measure first against the **existing**
+  `work/footage_index.json`; any fix stays inside **one** Gemini call; budget the live runs, each
+  is ~39K tokens and ~4 minutes.

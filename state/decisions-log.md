@@ -838,3 +838,69 @@ argument default") already ignored `typer.Option` on `str`- and `float`-annotate
 fired on the enum-annotated `--media-resolution`, which is an arbitrary line: in Typer the call
 *is* the parameter spec, not a shared mutable default. Listing the two calls keeps B008 live for
 real mutable defaults everywhere else rather than suppressing the rule or scattering `# noqa`.
+
+---
+
+## D-027 — Gemini's per-shot judgments are attached to the wrong `shot_index`
+
+**Status:** `open` — **measured, cause untested, fix deferred to T011** · **Date:** 2026-07-26 · **Found by:** T009 · **Affects:** T004, the A/B writeup
+
+T009's hand spot-check — the one acceptance criterion that requires a human to look at frames —
+found that **most captions do not describe the shot they are stored on.** 17 shots sampled across
+`in.mp4`, each compared against its extracted keyframe (the midpoint of `[t_start, t_end)`):
+
+| | |
+|---|---|
+| Clean match | **2** (`shot_000`, `shot_075`) |
+| Partial | **2** (`shot_040`, `shot_116`) |
+| Mismatch | **13** |
+
+The worst case is `shot_059`, the clip's **top-scored shot at 0.85**: captioned "Three men sit
+side-by-side in the back seat and give a thumbs up", `moment_reason` "Hero shot demonstrating
+real-world rear seat width with three adults". The frame is the presenter standing at an open boot
+with the rear seats up and nobody in them. An agent asked for the hero moment would cut to that.
+
+**What was ruled out before blaming the model.** Frames re-extracted with
+`ffmpeg -ss <midpoint> -frames:v 1` for shots 025, 059 and 105 are the same images the pipeline
+wrote, so `quality.score_shot()` samples where it claims to and the boundaries are right. All 234
+boundary values are exact multiples of 1/25s and the shots are contiguous over 10,701 of 10,701
+frames. `transcript` is unaffected — it joins by **time window** from WhisperX, and it matches the
+picture on the same shots that the caption gets wrong. **The classical half of the pipeline is
+sound. The failure is entirely in which index each LLM judgment lands on.**
+
+**Not a constant offset, so not repairable by shifting.** `shot_022`'s caption appears on
+`shot_025` (+3); `shot_048`'s caption describes what `shot_033`'s frame shows (−15); most have no
+visible partner nearby. The misassignment is per-shot.
+
+**Not a captioning failure.** The captions are accurate, specific English about things that
+genuinely happen in this video — a three-across rear seat test, a child seat, a 12V socket. The
+model watched the whole clip and understood it. Long-context understanding, the thing this path
+exists to prove, works. Attribution to a shot is what does not.
+
+**Two hypotheses, neither tested — this entry records a measurement, not a diagnosis:**
+
+1. **Timestamp granularity.** `understand()` passes the shot list as numbered text (D-010) and asks
+   for a `shot_index` back. Gemini's own timestamps are second-granular (CLAUDE.md hard constraint
+   4) while the median shot here is **2.68s** and **36 of 117 are under 2s**. The model may be
+   unable to resolve the boundary list at the granularity the index requires.
+2. **Frame starvation.** At `fps=0.5` there are ~214 sampled frames for 117 shots — 1.8 per shot,
+   and the sub-2s shots get one frame or none. A shot the model never saw still gets a row in the
+   response, and the `p2` rubric asks for a confident judgment on it.
+
+**Why nothing caught it, and what that says.** The schema validates, `validate_index()` passes,
+`t_end > t_start` holds, and the slow test's anti-clustering assertions pass (37 distinct scores at
+2dp — a genuine `p1 → p2` improvement, D-024). **Every automated gate in this repo checks shape,
+and a caption on the wrong shot has the right shape.** D-024 concluded "caption quality was never
+the problem", which was true and beside the point: nobody had yet asked whether the captions were
+on the right *shots*. A score distribution is not evidence of correctness — it is evidence of
+differentiation, and the two came apart here.
+
+**Deferred deliberately.** T009's contract is to measure, and its own Notes section says a failing
+criterion is a legitimate outcome. Fixing this inside T009 would have meant spending free-tier
+quota on prompt experiments under a task that exists to report numbers. Filed as **T011**, which
+starts with a repeatable measurement against the existing index rather than a change — 17
+hand-checked shots establish that the problem is real and are not enough to attribute a cause.
+
+**Constraint that shapes any fix:** one Gemini call per video (hard constraint 1). Asking about
+each shot separately is the design this project exists to avoid and would blow the 10 RPM cap on a
+117-shot clip. Whatever fixes this stays inside a single call.

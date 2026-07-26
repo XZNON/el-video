@@ -13,22 +13,27 @@ Kept in sync by `/checkpoint`.
 | [T006](T006-schema-and-models.md) | `schema/` — contract + validator | `done` | `validate_index()` landed, 31 tests. `t_end > t_start` is enforced in code — JSON Schema can't express it (**D-022**). |
 | [T007](T007-build-orchestrator.md) | `build.py` — orchestrator | `done` | Implemented, 33 tests. Last criterion closed live via the CLI: **234.7s end to end** on `in.mp4`, 117 shots / 1436 words / 1 Gemini call. Caveat in the task file: the clip is 7:08, so a true 10-min video projects to ~300–330s. |
 | [T008](T008-cli.md) | `cli.py` — entrypoint | `done` | Thin wrapper, 36 tests, both Typer traps guarded. `--threshold` exposed and `check_api_key()` preflighted (**D-026**). Fixed two output defects the live run exposed: em dashes on cp1252, and lightning logging past root=WARNING. |
-| [T009](T009-e2e-validation.md) | E2E validation | `not_started` | **Next.** Most evidence already measured (234.7s, 1 call, 38,956 tokens, 43 candidates, validates clean). Left: the run report in a **tracked** file, the 5-shot hand spot-check, the machine. Assert tokens against **~40K, not 30K** (D-025). |
+| [T009](T009-e2e-validation.md) | E2E validation | `done` | **8 pass, 2 fail, 1 not-verifiable** — [`docs/run-report.md`](../docs/run-report.md). Passes: 1 call, 234.7s, 117 frame-accurate shots, 1436 words, 3 validators clean, 37 distinct scores. Fails: **38,956 tokens** vs the spec's 30K (target was wrong — D-025), and the **hand spot-check, 13 of 17 captions on the wrong shot** (**D-027** → T011). Not verifiable: the Path A A/B (D-016). |
 | [T010](T010-schema-sync-checkpoint.md) | Schema-sync checkpoint | `done` | Solo repo (D-016) — resolved as a self-lock. D-001/D-002/D-013 all closed. |
+| [T011](T011-caption-shot-alignment.md) | Caption ↔ `shot_index` alignment | `not_started` | **Next, and the repo's top defect.** Gemini's judgments land on the wrong shots — 2 match / 2 partial / 13 mismatch of 17 hand-checked. Boundaries, keyframes and transcripts ruled out; not a constant offset. Measure first, then fix, still **one call** (**D-027**). |
 
 ## Suggested order
 
-Remaining: **T009**, and that is the whole list.
+Remaining: **T011**, and that is the whole list. T001–T010 are all `done`.
 
-**Nothing is blocked.** D-021 (the dead API key) was resolved on 2026-07-26; T007's `<5 min`
-criterion was closed the same day by the first live CLI run. Every earlier note in this file about
-waiting on a key is history.
+**Nothing is blocked.** D-021 (the dead API key) was resolved on 2026-07-26, and the pipeline has
+run end to end for real.
 
-T009 is now mostly **writing down** what has already been measured rather than measuring it: the
-live run produced 234.7s, 117 shots, 1436 words, one Gemini call, 38,956 tokens and 43 candidates
-against a clean `validate_index()`. What it still owes is a report in a **tracked** file (`work/`
-is gitignored), a five-shot hand spot-check that the captions describe what is on screen, and the
-machine recorded. A second live run is optional — the numbers above are current.
+**The s1 pipeline is structurally finished and substantively wrong in one place.** T009 proved the
+architecture claims — one Gemini call, 38,956 tokens, 234.7s, a schema-valid 117-shot index on a
+free-tier key with no 429 — and then its hand spot-check found that **the captions and scores are
+attached to the wrong shots** (D-027). Nothing automated caught it, because every gate in the repo
+is a shape check and a misfiled caption has the right shape.
+
+T011 is therefore the only thing worth doing next. It starts with a **repeatable measurement**
+against the existing index, not a change: 17 hand-checked shots prove the problem is real and are
+not enough to attribute a cause. Budget the live runs before starting — each is ~39K tokens and
+~4 minutes, and D-024's prompt work took three.
 
 ## Statuses
 
