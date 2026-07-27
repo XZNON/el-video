@@ -71,6 +71,7 @@ __all__ = [
     "UPLOAD_POLL_INTERVAL_S",
     "UPLOAD_TIMEOUT_S",
     "check_api_key",
+    "generate_attempt_count",
     "generate_call_count",
     "hint_drift",
     "is_rate_limited",
@@ -239,7 +240,12 @@ frame-accurate detector's boundaries and never become the cut points themselves.
 """
 
 _calls = 0
-"""Count of ``generate_content`` requests issued. See :func:`generate_call_count`."""
+"""Count of understanding *requests* — one per :func:`understand` call, retries excluded. See
+:func:`generate_call_count` and ``tasks/T013-retry-vs-one-call-counter.md``."""
+
+_attempts = 0
+"""Count of ``generate_content`` transport *attempts*, retries included. See
+:func:`generate_attempt_count`."""
 
 
 class _Judgment(BaseModel):
@@ -270,19 +276,36 @@ class _JudgmentWithHints(_Judgment):
 
 
 def generate_call_count() -> int:
-    """Number of ``generate_content`` requests issued since import or the last reset.
+    """Number of understanding **requests** issued since import or the last reset.
 
     The instrumentation behind the *one call per video* rule: T009 asserts this is ``1`` after a
-    full index run rather than trusting that the code path is what it looks like. A 429 retry
-    issues a second request and shows up here — that is the point, it should be visible.
+    full index run rather than trusting that the code path is what it looks like.
+
+    **One per :func:`understand` invocation, whatever the transport did.** A 429 retry of the same
+    request does not increment this — see :func:`generate_attempt_count` for that, and
+    ``tasks/T013-retry-vs-one-call-counter.md`` for why the two were split. Hard constraint 1
+    forbids *asking the model twice about one video*, which is what this counts; it does not forbid
+    TCP from needing two goes at asking once. Counting attempts here meant a single 429 aborted a
+    run that had already succeeded and threw ~235s of work away.
     """
     return _calls
 
 
+def generate_attempt_count() -> int:
+    """Number of ``generate_content`` transport attempts, retries included.
+
+    Strictly ``>= generate_call_count()``. A gap between the two is a 429 that the D-020 backoff
+    absorbed: harmless for correctness, expensive against the 20-requests/day free-tier quota
+    (D-031), and therefore worth reporting rather than hiding.
+    """
+    return _attempts
+
+
 def reset_call_count() -> None:
-    """Zero the request counter. For tests and for T009's per-run assertion."""
-    global _calls
+    """Zero both counters. For tests and for T009's per-run assertion."""
+    global _calls, _attempts
     _calls = 0
+    _attempts = 0
 
 
 def understand(
@@ -538,22 +561,44 @@ def _generate_with_backoff(
 ) -> types.GenerateContentResponse:
     """Issue the one ``generate_content`` request, retrying only on 429.
 
+    The **request** counter increments once, here, before any attempt; the **attempt** counter
+    increments inside the retried closure. Keeping them apart is what stops a 429 the backoff
+    successfully absorbed from tripping ``build.py``'s one-call assertion and discarding a run that
+    already worked — see ``tasks/T013-retry-vs-one-call-counter.md``.
+
     Raises:
         RuntimeError: If the rate limit survives :data:`RETRY_MAX_ATTEMPTS` attempts.
     """
+    global _calls
+
+    _calls += 1
+    request_no = _calls
+    logger.info(
+        "gemini generate_content request #%d model=%s fps=%s media_resolution=%s prompt=%s",
+        request_no,
+        MODEL,
+        fps,
+        media_resolution,
+        PROMPT_VERSION,
+    )
+
+    attempts_here = 0
 
     def _once() -> types.GenerateContentResponse:
-        global _calls
+        global _attempts
+        nonlocal attempts_here
 
-        _calls += 1
-        logger.info(
-            "gemini generate_content request #%d model=%s fps=%s media_resolution=%s prompt=%s",
-            _calls,
-            MODEL,
-            fps,
-            media_resolution,
-            PROMPT_VERSION,
-        )
+        _attempts += 1
+        attempts_here += 1
+        if attempts_here > 1:
+            # Louder than the request line above: a retry is invisible in the artifact but costs
+            # a second unit of the resource that actually binds (D-031).
+            logger.warning(
+                "gemini generate_content request #%d: transport attempt %d (429 retry, "
+                "D-020 backoff) - this consumes another of the 20 daily free-tier requests",
+                request_no,
+                attempts_here,
+            )
         return client.models.generate_content(model=MODEL, contents=contents, config=config)
 
     return _with_backoff("generate_content", _once)

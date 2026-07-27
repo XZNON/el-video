@@ -497,13 +497,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--keyframes", default="work/keyframes", help="Keyframe directory")
     parser.add_argument("--prompt-version", default="", help="The index's PROMPT_VERSION")
     parser.add_argument("--out", default="", help="Write the report JSON here as well")
+    parser.add_argument(
+        "--sample",
+        default="",
+        help=(
+            "Grade against this sample instead of the frozen one. Only for an index whose "
+            "boundaries differ - see elvideo/eval/remap.py (T012, D-033). The denominator changes."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    chosen = load_sample(Path(args.sample)) if args.sample else None
     report = grade_index(
-        args.index, args.keyframes, prompt_version=args.prompt_version
+        args.index, args.keyframes, sample=chosen, prompt_version=args.prompt_version
     )
-    print(report_markdown(report))
+    print(report_markdown(report, chosen))
     if args.out:
         Path(args.out).write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return 0

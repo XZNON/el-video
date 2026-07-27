@@ -1,7 +1,7 @@
 {
   "current_task": "T012",
-  "status": "not_started",
-  "status_note": "Deliberate deviation from the four-value enum in /checkpoint. Nothing is in_progress: T011 was CLOSED at partial by design on 2026-07-27 (D-032) and T012 exists as a written, unstarted successor. 'in_progress' would be false and 'task_complete' would overstate. T012 is optional - s1's pipeline is finished; T012 only buys better attribution at the cost of index granularity.",
+  "status": "in_progress",
+  "status_note": "Started 2026-07-27 (session 011). T011 remains CLOSED at partial by design (D-032); T012 is the coarser-intervals successor and is now live. It is still OPTIONAL work on a finished s1 pipeline - it buys better attribution at the cost of index granularity.",
   "completed_tasks": [
     "T001",
     "T002",
@@ -210,7 +210,11 @@
   },
   "superseded_next_task_from_session_009": "T011 has no cheap lever left. Both D-027 hypotheses are measured and the prompt/fps route is exhausted. The ONE untested class of fix is a different question, not a different prompt: merge adjacent sub-2s shots before the call (via --threshold) so the model chooses among ~60 distinguishable intervals instead of 117 near-identical ones. That changes shots[] itself, so it is a product decision and belongs in a NEW task (/new-task), not in T011. Alternative: accept the measured ~60% ceiling, close T011 as partial-by-design, and write the A/B up honestly. Budget any live session in REQUESTS (20/day, D-031), not tokens.",
   "next_task": "T012 - coarser intervals - and it is OPTIONAL, not owed. s1's pipeline is finished and its result is written up. Start T012 only if better attribution is worth losing index granularity for. Read tasks/T012-coarser-intervals.md in full first: it must solve the frozen-sample comparability problem BEFORE spending a request, and it must report what granularity was lost, not only what agreement was gained. Budget it in REQUESTS (20/day, D-031), not tokens: 8 of 20 for two thresholds x two runs graded. If nobody picks it up, the repo is in a coherent finished state as it stands.",
-  "last_updated": "2026-07-26T18:40:08Z",
+  "session_011_2026_07_27": {
+    "quota_probe": "One minimal generate_content request spent at session start to confirm the D-031 daily quota had reset (there is no quota-read endpoint on the free tier - a call that does not 429 is the only signal). It returned OK at 210 total tokens. 19 of 20 requests remained at that point. The probe deliberately bypassed understand(), so generate_call_count() is untouched and hard constraint 1 is unaffected.",
+    "plan": "Free ContentDetector sweep first (detect_shots is classical, zero requests), to pick the two thresholds that actually bracket ~60 intervals instead of assuming --threshold 40 does. Then 2 thresholds x 2 runs x (1 index + 1 grade) = 8 requests. Every run gets its own --work-dir: work/keyframes currently holds the 117 threshold-27 keyframes the grader needs as baseline, and a threshold-40 run would overwrite them with different shot ids."
+  },
+  "last_updated": "2026-07-27T00:00:00Z",
   "last_updated_note": "UTC. Local date at session 010's close was 2026-07-27 (IST, UTC+5:30) - the docs and log entries date it 2026-07-27 accordingly.",
   "t011_closure_note_final_2026_07_27": "T011 is CLOSED at partial. Not done, not in completed_tasks, and not coming back - see D-032. Its measured statement: gemini-3.5-flash attributing a moment to one of 117 sub-3-second intervals across a 7-minute clip is ~60% reliable (58 of 102 graded pairs clean over six p3 runs), and nothing available inside one call closes the rest. Criteria 2 and 3 FAIL, criterion 6 is closed as not achievable this way, six pass. The successor is T012.",
   "t011_closure_note_session_009": "T011 is PARTIAL, not done, by its own criterion 2: a smaller improvement 'does not close this task'. Delivered across sessions 008-009: a repeatable caption/frame agreement measurement (elvideo/eval/alignment.py, frozen 17-shot sample, one Gemini judge call, calibrated 16/17 against T009's human column); prompt p3, which anchors on timestamps instead of letting the model count shots; and a measured answer on fps. Six p3 runs: fps=0.5 gives 13/6/13 (mean 10.7/17), fps=1.0 gives 9/8/9 (mean 8.7) at +30% tokens. Criteria 2 and 3 FAIL (criterion 3 is 1 of 3 met - shot_005 matches on all six runs; shot_059 on none). Criterion 6 CLOSED as not achievable this way. Criterion 7 MET (D-030). Report: docs/run-report.md sections T011 and 'T011 continued'.",

@@ -252,20 +252,37 @@ def _stage(name: str, timings: dict[str, float]) -> Iterator[None]:
 
 
 def _assert_one_call() -> None:
-    """Fail the run if the understanding stage did not issue exactly one Gemini call.
+    """Fail the run if the understanding stage did not issue exactly one Gemini request.
 
     The hard constraint is *one call per video, never per shot* (``docs/IDEA.md`` § *Gemini call
     settings*, ``.claude/CLAUDE.md`` constraint 1). Checked against the counter rather than
     asserted in a comment — the point of the instrument is that a refactor cannot quietly break
-    the rule. A count above 1 is also what a 429 retry storm looks like from here.
+    the rule.
+
+    **Requests, not transport attempts** (``tasks/T013-retry-vs-one-call-counter.md``). A 429 the
+    D-020 backoff absorbed is one request that took two goes, not two requests; failing the run on
+    it discarded ~235s of completed work and wrote no index. Retries are reported here instead,
+    because they are free of correctness consequences and expensive against the 20-requests/day
+    quota (D-031). A genuine second understanding request still aborts the run.
     """
     calls = gemini.generate_call_count()
     if calls != 1:
         raise RuntimeError(
-            f"expected exactly 1 Gemini generate_content call for this video, counted {calls} - "
-            f"see .claude/CLAUDE.md constraint 1 (one call per video, never per shot)"
+            f"expected exactly 1 Gemini understanding request for this video, counted {calls} - "
+            f"see .claude/CLAUDE.md constraint 1 (one call per video, never per shot). This "
+            f"counts requests, not 429 retries of one request - those are transport attempts, "
+            f"reported separately."
         )
-    logger.info("gemini generate_content calls: %d", calls)
+    attempts = gemini.generate_attempt_count()
+    logger.info("gemini generate_content requests: %d (transport attempts: %d)", calls, attempts)
+    if attempts > calls:
+        logger.warning(
+            "gemini: %d transport attempt(s) for %d request(s) - %d extra free-tier request(s) "
+            "spent on 429 retries (D-031)",
+            attempts,
+            calls,
+            attempts - calls,
+        )
 
 
 def _apply_transcripts(shots: Sequence[Shot], words: list[Word]) -> None:

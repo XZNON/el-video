@@ -166,6 +166,7 @@ class FakePipeline:
     understanding: list[ShotUnderstanding] | None = None
     words: list[Word] | None = None
     call_count: int = 1
+    attempt_count: int = 1
 
 
 @pytest.fixture
@@ -235,6 +236,7 @@ def pipeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakePipeline:
     monkeypatch.setattr(build.transcribe, "transcribe", fake_transcribe)
     monkeypatch.setattr(build.gemini, "understand", fake_understand)
     monkeypatch.setattr(build.gemini, "generate_call_count", lambda: fake.call_count)
+    monkeypatch.setattr(build.gemini, "generate_attempt_count", lambda: fake.attempt_count)
     monkeypatch.setattr(build.gemini, "reset_call_count", lambda: None)
     monkeypatch.setattr(build.quality, "score_shot", fake_score_shot)
     return fake
@@ -310,12 +312,32 @@ def test_wrong_gemini_call_count_aborts_the_run(
     Nothing is written: the abort happens before quality, join, validate or write.
     """
     pipeline.call_count = counted
+    pipeline.attempt_count = counted
     work = tmp_path / "work"
 
     with pytest.raises(RuntimeError, match="exactly 1 Gemini"):
         build_index(str(pipeline.video_path), work_dir=str(work))
 
     assert not (work / "footage_index.json").exists()
+
+
+def test_a_429_retry_does_not_abort_a_run_that_succeeded(
+    pipeline: FakePipeline, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One request, two transport attempts — the run completes and the index is written.
+
+    T013. Before it, ``build.py`` read the attempt count and aborted here, discarding ~235s of
+    finished work over a 429 the D-020 backoff had already absorbed.
+    """
+    pipeline.call_count = 1
+    pipeline.attempt_count = 2
+    work = tmp_path / "work"
+
+    with caplog.at_level(logging.WARNING, logger="elvideo.index.build"):
+        build_index(str(pipeline.video_path), work_dir=str(work))
+
+    assert (work / "footage_index.json").exists()
+    assert any("429 retries" in r.getMessage() for r in caplog.records)
 
 
 def test_understand_gets_the_detected_boundaries(pipeline: FakePipeline, tmp_path: Path) -> None:

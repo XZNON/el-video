@@ -1,7 +1,7 @@
 # T012 — Coarser intervals: ask about ~60 shots instead of 117
 
-**Status:** `not_started` — **recorded as T011's named successor, not scheduled.** Created
-2026-07-27 (session 010) by the Path B decision, **D-032**. Nothing here has been run.
+**Status:** `in_progress` — started 2026-07-27 (session 011). Created 2026-07-27 (session 010) by
+the Path B decision, **D-032**, as T011's named successor.
 
 ## Goal
 
@@ -35,8 +35,13 @@ its `t_start`/`t_end`, its keyframes. That is why it is a separate task rather t
 ## Inputs / outputs
 
 **In:** `in.mp4`, and a **different** boundary list — `scenes.detect_shots()` at a raised
-`ContentDetector` threshold (`python -m elvideo index in.mp4 --threshold 40`), so adjacent micro-cuts
-merge.
+`ContentDetector` threshold, so adjacent micro-cuts merge.
+
+> **`--threshold 40` was an assumption and it is wrong — see D-033.** A free sweep (`detect_shots()`
+> makes no Gemini call) measured it at **107 shots**, a 9% change from the 117 baseline with 33 still
+> under 2s. `ContentDetector`'s response on this footage is flat to ~45 and then falls off a cliff:
+> 45 → 99, 50 → 78, 55 → 55, 60 → 30, 70 → 5. The chartered "~60 intervals" lives at **50 and 55**,
+> and those are the two settings this task runs. Sub-2s shots fall 36 → 16 at 50 and 36 → 7 at 55.
 
 **Out:** the same `footage_index.json` shape with **different `shots[]` content** — fewer, longer
 shots. **The schema does not change** (hard constraint 6): different values, same contract. If this
@@ -59,9 +64,12 @@ Both are stated in D-032. Neither is optional.
 
 ## Acceptance criteria
 
-- [ ] The sample-comparability problem has a **stated, implemented solution** before any live run —
-      old sample timestamps mapped onto the new shot list, with the changed denominator named in the
-      report.
+- [x] **DONE before the first live request** — `elvideo/eval/remap.py` maps each frozen sampled
+      shot by *midpoint timestamp* onto the new shot list, collapses merged neighbours to one row,
+      and writes the changed denominator into the emitted sample's own `rule` string so a number
+      cannot be quoted without it. `elvideo/eval/alignment.py` gained `--sample`. 11 tests in
+      `tests/test_remap.py`. Measured denominators: **16 of 17 at threshold 50** (`shot_033` +
+      `shot_040` merge), **15 of 17 at threshold 55** (also `shot_022` + `shot_025`).
 - [ ] At least **two runs per threshold setting**, graded through `elvideo/eval/alignment.py`.
       Report the **mean**, never a single lucky run — T011 saw 13/17 and 6/17 from bit-identical
       inputs (D-030, finding 1).

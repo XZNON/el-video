@@ -1198,3 +1198,108 @@ Or if the pinned model changes (hard constraint 3 would have to move first), whi
 the ceiling measurement outright rather than refine it.
 
 ---
+
+## D-033 — T012 runs at `--threshold` **50 and 55**, not the 40 the task file names
+
+**Status:** `resolved` — **measured before spending a request** · **Date:** 2026-07-27 · **Task:** T012 · **Supersedes:** the `--threshold 40` figure in `tasks/T012-coarser-intervals.md` and D-032 · **Cost:** 0 Gemini requests
+
+`tasks/T012-coarser-intervals.md` and D-032 both name `--threshold 40` as the way to get "~60
+distinguishable intervals". **That number was never measured — it was assumed.** `detect_shots()` is
+classical (hard constraint 4), so sweeping it costs wall-clock and nothing else. The sweep, on
+`in.mp4`:
+
+| threshold | shots | median | mean | max | under 2s | under 1s |
+|---:|---:|---:|---:|---:|---:|---:|
+| **27.0** (D-012 baseline) | **117** | 2.68s | 3.66s | 23.84s | 36 | 4 |
+| 32.0 | 115 | 2.68s | — | 23.84s | 36 | 4 |
+| 36.0 | 112 | 2.84s | — | 26.40s | 35 | 4 |
+| **40.0** (the assumed value) | **107** | 2.84s | — | 26.40s | 33 | 4 |
+| 45.0 | 99 | 3.08s | — | 32.20s | 26 | 2 |
+| **50.0** (chosen) | **78** | 3.40s | — | 39.28s | 16 | 2 |
+| 52.0 | 66 | — | — | — | — | — |
+| **55.0** (chosen) | **55** | 4.04s | — | 52.44s | **7** | 2 |
+| 60.0 | 30 | 5.14s | — | 81.20s | 4 | 1 |
+| 65.0 | 15 | 15.60s | — | 107.80s | 2 | 0 |
+| 70.0 | 5 | 43.40s | — | 313.52s | 0 | 0 |
+| 80.0 / 90.0 | 2 | 214.02s | — | 412.44s | 0 | 0 |
+
+**`ContentDetector`'s response on this footage is flat and then falls off a cliff.** 27 → 45 removes
+18 shots across four settings; 50 → 60 removes 48 across two. **`--threshold 40` yields 107 shots** —
+a 9% change from the 117 baseline, with 33 of them still under 2s. It does not produce ~60 intervals
+and it does not test T012's hypothesis; it would have spent 4 of the day's 20 requests (D-031) to
+measure 107-vs-117.
+
+**Decision:** run at **50.0 (78 shots)** and **55.0 (55 shots)**, which bracket the chartered ~60
+target from below and above. Confirmed with the owner before any live request.
+
+**Why not push further:** 60.0 gives 30 shots over 7 minutes and 70.0 gives 5. Past ~60 the detector
+stops merging micro-cuts and starts discarding real ones — a different experiment (and D-012's known
+blind spot in reverse). 55.0 is the coarsest setting that is still recognisably a shot list.
+
+**What the chosen settings cost, stated up front:** sub-2s shots fall **36 → 16** at threshold 50 and
+**36 → 7** at threshold 55. Those short shots are exactly the B-roll cutaways D-032 warned would
+vanish into a parent. That is the granularity price of the experiment, and T012's criterion 7
+requires naming a concrete casualty in the report.
+
+**Denominator, measured by dry-running the remap (also free):** the 17 frozen sampled moments land on
+**16** distinct shots at threshold 50 (`shot_033` + `shot_040` merge) and **15** at threshold 55
+(also `shot_022` + `shot_025`). Both stay close enough to 17 that match *rates* remain comparable to
+T011's mean 10.7/17 — provided both denominators are stated, which `elvideo/eval/remap.py` forces by
+writing them into the sample's own `rule` string.
+
+**No schema change** (hard constraint 6): `shots[]` gets different content, same shape. The threshold
+remains a per-video CLI knob and **D-012's default of 27.0 is unchanged** — this is an experiment at
+a non-default setting, not a new default.
+
+---
+
+## D-034 — The one-call counter counts *requests*, not transport attempts
+
+**Status:** `resolved` — **shipped** · **Date:** 2026-07-27 · **Task:** T013 (blocking T012) · **Affects:** T004 `gemini.py`, T007 `build.py`, `docs/IDEA.md` § *Definition of done (s1)* bullet 2 · **Cost:** 0 Gemini requests
+
+**Found by running the pipeline, not by reading it.** T012's first live run at `--threshold 50`
+completed its understanding stage — 78 shots, hint alignment 78 of 78, 36,885 tokens — and then
+aborted with `expected exactly 1 Gemini generate_content call for this video, counted 2`. No index
+was written. ~235s of work and **2 of the day's 20 requests** (D-031) were discarded.
+
+**The collision.** `_generate_with_backoff()` incremented `_calls` *inside* the closure `tenacity`
+retries, so the counter measured transport attempts. `build.py::_assert_one_call()` required exactly
+1. **The D-020 backoff and the hard-constraint-1 assertion therefore could not both fire in one
+run:** the backoff exists to survive a 429, and surviving one guaranteed the run was thrown away
+afterwards. `build.py`'s own docstring anticipated it — *"A count above 1 is also what a 429 retry
+storm looks like from here"* — so the behaviour was documented; it had simply never been experienced
+across ~two dozen live runs in T007, T009 and T011, because no 429 had ever landed mid-call.
+
+**Decision: split the instrument in two.**
+
+| | counts | incremented |
+|---|---|---|
+| `generate_call_count()` | understanding **requests**, one per `understand()` | once, before any attempt |
+| `generate_attempt_count()` | **transport attempts**, retries included | inside the retried closure |
+
+`reset_call_count()` zeroes both. `build.py` still asserts `generate_call_count() == 1` — **a
+genuine second understanding request aborts the run exactly as before** — and now logs the attempt
+count beside it, at `WARNING` when the two differ.
+
+**Why this does not weaken hard constraint 1.** The rule is *one call per video, never per shot*,
+and what it exists to catch is a "just re-ask for the shots it missed" refactor. That is a second
+**request**, which is still caught. One request that needed two goes at the wire is a transport
+event, not a design violation. The distinction the old counter could not draw is precisely the one
+the constraint cares about.
+
+**Retries got louder, not quieter.** A 429 absorbed by the backoff is invisible in the artifact and
+costs a second unit of the binding resource, so it is now a `WARNING` in both modules naming the
+extra request spent. Under the old counter a retry was "visible" only by destroying the run.
+
+**`docs/IDEA.md` § *Definition of done (s1)* bullet 2 says "assert call count == 1".** Still true,
+and still asserted — "call" now means request. Reinterpreted, not broken, and recorded here rather
+than silently edited, per the CLAUDE.md conflict rule (as with D-016 and D-031).
+
+**Tests:** `test_429_is_retried_then_succeeds` inverted (it asserted the old `== 2`), plus four new —
+retry logged at `WARNING`, attempts counted per request rather than cumulatively, both counters
+reset, and `build_index()` completing on a 1-request/2-attempt run with the index actually written.
+226 fast tests, ruff clean, mypy strict clean (15 files).
+
+**No schema change** (hard constraint 6). No field, no contract, no artifact difference.
+
+---

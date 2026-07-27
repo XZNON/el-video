@@ -483,11 +483,49 @@ def _rate_limited() -> genai_errors.ClientError:
 
 
 def test_429_is_retried_then_succeeds(video: str) -> None:
+    """One request, two transport attempts. T013: the counters report those separately.
+
+    This is the case that broke T012's first live run — before T013 the request counter read 2
+    here, and ``build.py``'s ``!= 1`` assertion discarded a run whose understanding had already
+    succeeded.
+    """
     client = _FakeClient([_rate_limited(), _response([_judgment(0)])])
     out = _run(client, video, shots=_shots(1))
     assert len(out) == 1
     assert len(client.calls) == 2
-    assert generate_call_count() == 2  # retries are visible, not hidden
+    assert generate_call_count() == 1  # one request...
+    assert gemini.generate_attempt_count() == 2  # ...that took two goes. Visible, not hidden.
+
+
+def test_retry_is_logged_at_warning_because_it_costs_a_daily_request(
+    video: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A retry is free of correctness consequences and expensive against the quota (D-031)."""
+    client = _FakeClient([_rate_limited(), _response([_judgment(0)])])
+    with caplog.at_level(logging.WARNING, logger="elvideo.index.gemini"):
+        _run(client, video, shots=_shots(1))
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("transport attempt 2" in r.getMessage() for r in warnings)
+
+
+def test_attempts_are_counted_per_request_not_cumulatively(video: str) -> None:
+    """A second request whose first attempt succeeds must not be mislabelled a retry."""
+    client = _FakeClient([_rate_limited(), _response([_judgment(0)])])
+    _run(client, video, shots=_shots(1))
+    _run(client, video, shots=_shots(1))
+
+    assert generate_call_count() == 2
+    assert gemini.generate_attempt_count() == 3  # 2 for the first request, 1 for the second
+
+
+def test_reset_zeroes_both_counters(video: str) -> None:
+    client = _FakeClient([_rate_limited(), _response([_judgment(0)])])
+    _run(client, video, shots=_shots(1))
+    reset_call_count()
+
+    assert generate_call_count() == 0
+    assert gemini.generate_attempt_count() == 0
 
 
 def test_persistent_429_surfaces_a_clear_error_not_an_empty_list(video: str) -> None:
